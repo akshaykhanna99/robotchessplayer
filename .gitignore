@@ -1,0 +1,20 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+tf_env/
+venv/
+.venv/
+env/
+
+# Datasets and model artifacts
+chess_dataset/
+chess_dataset_v1/
+model_archives/
+*.h5
+
+# Editor/OS junk
+.idea/
+.vscode/
+*.swp
