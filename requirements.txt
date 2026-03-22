@@ -1,0 +1,17 @@
+# Core numerical / vision
+numpy
+opencv-python
+scikit-learn
+
+# ML / model training + inference
+tensorflow
+keras
+
+# Chess engine integration
+python-chess
+
+# Hardware serial UI (robot_mech_testing)
+pyserial
+
+# UI control centre
+PySide6

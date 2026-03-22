@@ -11,7 +11,7 @@ env/
 # Datasets and model artifacts
 chess_dataset/
 chess_dataset_v1/
-model_archives/
+models/
 *.h5
 
 # Editor/OS junk

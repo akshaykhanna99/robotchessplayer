@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
+from pathlib import Path
 from keras import models
 
 # Load the trained model
-model = models.load_model("chess_piece_classifier_v4.h5")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+model = models.load_model(PROJECT_ROOT / "models" / "archive" / "chess_piece_classifier_v4.h5")
 
 # Initialize webcam
 cap = cv2.VideoCapture(0)
