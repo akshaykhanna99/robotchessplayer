@@ -1,11 +1,10 @@
 # Core numerical / vision
-numpy
+numpy<2
 opencv-python
 scikit-learn
 
 # ML / model training + inference
-tensorflow
-keras
+tensorflow==2.16.1
 
 # Chess engine integration
 python-chess

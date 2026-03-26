@@ -1,7 +1,7 @@
 # Apps
 
-User-facing runnable scripts (runtime, labeling, hardware tools).
+User-facing runnable script entrypoints.
 
-New UI entrypoint:
+Supported launcher:
 
-- `apps/operator_control_centre.py`
+- `apps/web_control_centre.py`

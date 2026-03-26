@@ -3,14 +3,15 @@
 Modular robot chess player project with:
 
 - vision dataset labeling/training/testing tools
-- runtime chessboard inference + Stockfish integration
+- web-based chessboard inference + Stockfish integration
 - robot/servo mechanical test utilities (Arduino + PCA9686)
 
 ## Repo Structure (Current)
 
 - `src/vision/` - vision system (camera tools, labeling, preprocessing, model builders, training, testing)
-- `apps/runtime/` - interactive runtime apps
-- `apps/labeling/` - thin app entrypoint for labeling workflow
+- `apps/web_control_centre.py` - web command-centre launcher
+- `web_control_centre/` - React frontend for the command centre
+- `src/web_control_centre/` - backend server for the command centre
 - `robot_mech_testing/` - servo test UI + Arduino sketches
 - `models/` - trained model artifacts (`.h5`)
 - `systemarchitecture.md` - system architecture, objectives, and roadmap
@@ -26,9 +27,11 @@ Note: scripts inside `src/` should be run as Python modules (`python -m ...`) so
 macOS/Linux:
 
 ```bash
-python3 -m venv tf_env
+python3.10 -m venv tf_env
 source tf_env/bin/activate
 ```
+
+Use Python `3.10` to `3.12` for the TensorFlow training stack. On Intel macOS, this repo targets a pinned TensorFlow-compatible environment from `requirements.txt`.
 
 ### 2. Install Python dependencies
 
@@ -46,6 +49,11 @@ If `python3` points to a different interpreter on your machine, prefer `python` 
 ```bash
 python -c "import tensorflow, cv2, numpy, chess, serial; print('OK')"
 ```
+
+Expected ML stack:
+
+- `tensorflow==2.16.1`
+- `numpy<2`
 
 ## Common Workflows
 
@@ -75,12 +83,6 @@ python -m src.vision.testing.evaluate_model \
   --model models/chess_piece_classifier_v7.h5
 ```
 
-### Label dataset squares (interactive)
-
-```bash
-python apps/labeling/main_label.py
-```
-
 ### Camera setup/testing tools
 
 ```bash
@@ -88,10 +90,10 @@ python -m src.vision.camera.test_camera_interactive
 python -m src.vision.camera.fpscheck
 ```
 
-### Run runtime inference app (vision + chess logic)
+### Run the web command centre
 
 ```bash
-python -m apps.runtime.main_inference_spacebar
+python apps/web_control_centre.py
 ```
 
 Notes:
@@ -100,21 +102,15 @@ Notes:
 - Requires Stockfish installed locally (current runtime script uses `/usr/local/bin/stockfish`)
 - Requires a webcam and manual board corner selection
 
-### Mock motion/robot integration demo (no hardware)
+Start the frontend in a second terminal:
 
 ```bash
-python -m apps.runtime.mock_robot_move_demo --uci e2e4
+cd web_control_centre
+npm install
+npm run dev
 ```
 
-Uses `config/physical_setup.example.json` for board geometry, kinematics, and mock execution.
-
-### Control Centre UI (PySide6)
-
-```bash
-python -m apps.operator_control_centre
-```
-
-This launches the tiled control-centre UI with camera feed, robot twin views, and game/log panel.
+Then open the local Vite URL shown in the terminal.
 
 ## Hardware / Servo Testing (Optional, Separate)
 

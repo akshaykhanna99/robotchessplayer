@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 import numpy as np
-from sklearn.model_selection import train_test_split
 from src.vision.models.builders import get_model_builder
 from src.vision.preprocessing import get_preprocessor
 from src.vision.training.dataset_loader import (
@@ -43,6 +42,32 @@ def parse_args():
     return parser.parse_args()
 
 
+def stratified_train_val_split(X, y, val_fraction=0.2, seed=42):
+    """Split arrays into train/validation while preserving class proportions."""
+    y_labels = np.argmax(y, axis=1)
+    rng = np.random.default_rng(seed)
+    train_indices = []
+    val_indices = []
+
+    for class_id in np.unique(y_labels):
+        class_indices = np.where(y_labels == class_id)[0]
+        shuffled = rng.permutation(class_indices)
+        if len(shuffled) <= 1:
+            train_indices.extend(shuffled.tolist())
+            continue
+
+        val_count = max(1, int(round(len(shuffled) * val_fraction)))
+        if val_count >= len(shuffled):
+            val_count = len(shuffled) - 1
+
+        val_indices.extend(shuffled[:val_count].tolist())
+        train_indices.extend(shuffled[val_count:].tolist())
+
+    train_indices = np.array(rng.permutation(train_indices))
+    val_indices = np.array(rng.permutation(val_indices))
+    return X[train_indices], X[val_indices], y[train_indices], y[val_indices]
+
+
 def main():
     args = parse_args()
     preprocess_fn = get_preprocessor(args.variant)
@@ -58,12 +83,8 @@ def main():
     print(f"Image shape: {X[0].shape}")
     print(f"Training variant: {args.variant}")
 
-    # Split into training (80%) and validation (20%) sets.
-    # Stratify ensures each class is proportionally represented in both sets.
-    y_labels = np.argmax(y, axis=1)  # Convert one-hot back to labels for stratification
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y_labels
-    )
+    # Split into training (80%) and validation (20%) sets while preserving class balance.
+    X_train, X_val, y_train, y_val = stratified_train_val_split(X, y, val_fraction=0.2, seed=42)
 
     print(f"\nTraining samples: {len(X_train)}, Validation samples: {len(X_val)}")
 

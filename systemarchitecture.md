@@ -20,21 +20,22 @@ The project is not yet fully integrated end-to-end (camera detection -> move pla
 
 ### 2.2 Current System Boundary
 
-The runtime chess pipeline (`main_inference_spacebar.py`) does **not** yet execute robot moves by default, but a mock-first motion/robot integration path exists under `src/motion/`, `src/robot/`, and the new control-centre UI orchestrator.
+The runtime chess pipeline is now centered on the web control centre, with the vision/game flow exposed through `apps/web_control_centre.py`, `src/web_control_centre/`, and `web_control_centre/`.
 
 ## 3. Component Map (Repository-Level)
 
 ### 3.1 Vision / Inference / Chess Logic
 
-- `main_inference_spacebar.py`
-  - Main interactive runtime entry point.
+- `apps/web_control_centre.py`
+  - Main runtime entry point for the current system.
+  - Starts the lightweight Python backend server for the web control centre.
+- `src/web_control_centre/server.py`
   - Captures webcam frames.
-  - Manual corner calibration and perspective warp.
-  - Square-by-square CNN classification.
-  - Board-state differencing to detect moves.
-  - Uses `python-chess` + Stockfish to track legality and suggest Black moves.
-- `main_inference.py`
-  - Earlier live inference variant (continuous inference cadence).
+  - Handles manual corner calibration and perspective warp.
+  - Runs square-by-square CNN classification.
+  - Tracks observed board state, move detection, and Stockfish-backed game state.
+- `web_control_centre/`
+  - React frontend for the live command-centre UI.
 - `src/vision/testing/evaluate_model.py`
   - Standalone model-quality evaluation script for validating saved `.h5` classifiers on labeled datasets.
 
@@ -44,8 +45,6 @@ The runtime chess pipeline (`main_inference_spacebar.py`) does **not** yet execu
   - Interactive board capture + manual square labeling workflow.
   - Warps the board, shows each square, saves labeled images.
   - Performs immediate rotation augmentation (90/180/270) on save.
-- `apps/labeling/main_label.py`
-  - Thin app runner that launches the canonical labeling workflow in `src/vision/labeling/capture/main_label.py`.
 - `board_detection.py`
   - Core board corner selection and perspective/grid utilities (prototype/experimental script).
 - `src/vision/labeling/augmentation/rotate_images.py`
@@ -97,16 +96,16 @@ The runtime chess pipeline (`main_inference_spacebar.py`) does **not** yet execu
 
 ### 3.7 Control Centre UI
 
-- `apps/operator_control_centre.py`
-  - PySide6 UI entrypoint for orchestrating vision/game/motion/robot flows.
-- `src/ui/`
-  - UI layout, panels, and rendering (vision panel, robot twin views, game/log panel).
-- `src/orchestrator/`
-  - Control-centre controller, events, and workers.
+- `apps/web_control_centre.py`
+  - Launches the backend server for the web command centre.
+- `src/web_control_centre/`
+  - Backend state, inference orchestration, and API endpoints.
+- `web_control_centre/`
+  - Frontend layout, polling, controls, and live board display.
 
 ## 4. End-to-End Runtime Architecture (Current Main Path)
 
-This describes the primary runtime flow implemented in `main_inference_spacebar.py`.
+This describes the primary runtime flow implemented in the web control centre backend.
 
 ### 4.1 Startup
 
@@ -128,7 +127,7 @@ This manual calibration step is the current alignment mechanism; there is no aut
 
 ### 4.3 Square Classification (Vision Inference)
 
-1. User presses spacebar to trigger inference (`run_inference=True`).
+1. User triggers inference from the web control centre.
 2. Each square crop is resized to `64x64`.
 3. Preprocessing creates a 5-channel tensor:
    - BGR (3 channels)

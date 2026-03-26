@@ -6,13 +6,22 @@ __pycache__/
 tf_env/
 venv/
 .venv/
+.venv310/
 env/
 
 # Datasets and model artifacts
 chess_dataset/
 chess_dataset_v1/
+chess_dataset_web/
 models/
 *.h5
+
+# Frontend dependencies and build output
+web_control_centre/node_modules/
+web_control_centre/dist/
+web_control_centre/*.tsbuildinfo
+web_control_centre/vite.config.js
+web_control_centre/vite.config.d.ts
 
 # Editor/OS junk
 .idea/
