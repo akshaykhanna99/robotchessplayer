@@ -1,0 +1,152 @@
+{
+  "setup_name": "min_board_arm_v7_config",
+  "units": "mm",
+  "world_frame": {
+    "name": "board",
+    "origin_definition": "board_corner_a1_outer"
+  },
+  "board": {
+    "origin_x_mm": -15.0,
+    "origin_y_mm": -15.0,
+    "origin_z_mm": 0.0,
+    "yaw_deg": 0.0,
+    "square_size_mm": 20.0,
+    "board_size_x_mm": 190.0,
+    "board_size_y_mm": 190.0,
+    "thickness_mm": 19.0,
+    "light_square_color": "#e9d8b4",
+    "dark_square_color": "#7a5230",
+    "border_color": "#2f241d"
+  },
+  "robot": {
+    "base_frame": {
+      "x_mm": 80.0,
+      "y_mm": 263.2,
+      "z_mm": 84.9,
+      "yaw_deg": 0.0
+    },
+    "base_geometry": {
+      "shape": "cylinder",
+      "radius_mm": 33.2,
+      "height_mm": 100.9,
+      "color": "#4a4f57"
+    },
+    "links": [
+      {
+        "name": "shoulder",
+        "length_mm": 150.0,
+        "radius_mm": 5.0,
+        "color": "#6f7a89"
+      },
+      {
+        "name": "elbow",
+        "length_mm": 150.0,
+        "radius_mm": 5.0,
+        "color": "#7f8b99"
+      },
+      {
+        "name": "wrist",
+        "length_mm": 21.0,
+        "radius_mm": 5.0,
+        "color": "#97a3b0"
+      }
+    ],
+    "joints": {
+      "base": {
+        "axis": "z",
+        "min_deg": -180.0,
+        "max_deg": 0.0,
+        "home_deg": -90
+      },
+      "shoulder": {
+        "axis": "y",
+        "min_deg": -90.0,
+        "max_deg": 150.0,
+        "home_deg": 45.0
+      },
+      "elbow": {
+        "axis": "y",
+        "min_deg": -10.0,
+        "max_deg": 170.0,
+        "home_deg": 90.0
+      },
+      "wrist": {
+        "axis": "x",
+        "min_deg": -180.0,
+        "max_deg": 180.0,
+        "home_deg": -30.0
+      }
+    }
+  },
+  "tool": {
+    "type": "gripper",
+    "mount_offset_mm": {
+      "x_mm": 10.0,
+      "y_mm": 0.0,
+      "z_mm": 0.0
+    },
+    "pickup_point_offset_mm": {
+      "x_mm": 0.0,
+      "y_mm": 0.0,
+      "z_mm": -20.0
+    },
+    "geometry": {
+      "shape": "box",
+      "size_x_mm": 20.0,
+      "size_y_mm": 40.0,
+      "size_z_mm": 20.0,
+      "color": "#c94f3d"
+    }
+  },
+  "pieces": {
+    "default_clearance_above_piece_mm": 40.0,
+    "default_grasp_height_from_base_mm": 5.0,
+    "types": {
+      "pawn": { "diameter_mm": 11.0, "height_mm": 19.0, "color": "#f5f0e6" },
+      "rook": { "diameter_mm": 11.0, "height_mm": 21.0, "color": "#f5f0e6" },
+      "knight": { "diameter_mm": 11.0, "height_mm": 22.0, "color": "#f5f0e6" },
+      "bishop": { "diameter_mm": 11.0, "height_mm": 25.0, "color": "#f5f0e6" },
+      "queen": { "diameter_mm": 11.0, "height_mm": 26.0, "color": "#f5f0e6" },
+      "king": { "diameter_mm": 11.0, "height_mm": 31.0, "color": "#f5f0e6" }
+    }
+  },
+  "scene": {
+    "table": {
+      "x_mm": -200.0,
+      "y_mm": -200.0,
+      "z_mm": -19.0,
+      "size_x_mm": 800.0,
+      "size_y_mm": 800.0,
+      "size_z_mm": 20.0,
+      "color": "#8b6a4e"
+    },
+    "capture_tray": {
+      "x_mm": 460.0,
+      "y_mm": 100.0,
+      "z_mm": 18.0,
+      "size_x_mm": 120.0,
+      "size_y_mm": 80.0,
+      "size_z_mm": 20.0,
+      "color": "#444444"
+    },
+    "obstacles": [
+      {
+        "name": "camera_mount",
+        "shape": "box",
+        "x_mm": 275.0,
+        "y_mm": -80.0,
+        "z_mm": -19.0,
+        "size_x_mm": 70.0,
+        "size_y_mm": 70.0,
+        "size_z_mm": 400.0,
+        "color": "#555555"
+      }
+    ]
+  },
+  "rendering": {
+    "show_axes": true,
+    "show_square_labels": true,
+    "show_collision_geometry": true,
+    "background": "#f3f1eb"
+  }
+}

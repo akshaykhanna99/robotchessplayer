@@ -145,6 +145,66 @@ h1 {
   flex-direction: column;
 }
 
+.kinematics-stage {
+  min-height: 0;
+}
+
+.digital-twin-stage {
+  position: relative;
+  min-height: 430px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, rgba(31, 127, 123, 0.16), transparent 28%),
+    linear-gradient(160deg, rgba(251, 247, 241, 0.98), rgba(233, 224, 209, 0.94));
+}
+
+.digital-twin-viewbar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.view-chip {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(17, 23, 31, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f6f1e6;
+  box-shadow: 0 12px 24px rgba(10, 15, 21, 0.14);
+}
+
+.view-chip.active {
+  background: linear-gradient(180deg, rgba(31, 127, 123, 0.96), rgba(25, 98, 95, 0.94));
+}
+
+.twin-square-label {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(18, 24, 34, 0.8);
+  color: #faf7f0;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.origin-label {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(17, 23, 31, 0.84);
+  color: #f8f4ea;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -493,6 +553,12 @@ button:disabled {
 .status-light.offline {
   color: #c44331;
   background: #c44331;
+}
+
+@media (max-width: 1080px) {
+  .digital-twin-stage {
+    min-height: 360px;
+  }
 }
 
 .board-shell {
