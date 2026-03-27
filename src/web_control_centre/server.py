@@ -21,6 +21,7 @@ import numpy as np
 from src.game.engine import StockfishEngineClient
 from src.game.session import ChessGameSession
 from src.game.move_detection import detect_observed_move
+from src.robot.web_kinematics import WebKinematicsModel
 
 
 HOST = os.getenv("WEB_CONTROL_CENTRE_HOST", "127.0.0.1")
@@ -33,6 +34,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TRAINING_DATASET = os.getenv("WEB_CONTROL_CENTRE_TRAINING_DATASET", "chess_dataset_web")
 DEFAULT_ACTIVE_CLASSIFIER = os.getenv("WEB_CONTROL_CENTRE_ACTIVE_CLASSIFIER", "models/chess_piece_classifier_v7.h5")
 DEFAULT_STOCKFISH_PATH = os.getenv("WEB_CONTROL_CENTRE_STOCKFISH_PATH", "/usr/local/bin/stockfish")
+DEFAULT_DIGITAL_TWIN_CONFIG = os.getenv(
+    "WEB_CONTROL_CENTRE_DIGITAL_TWIN_CONFIG",
+    str(PROJECT_ROOT / "config" / "digital_twin_setup_v1.json"),
+)
 DEFAULT_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 TRAINING_LABEL_TO_FOLDER = {
     "empty": "empty",
@@ -66,8 +71,8 @@ class JointState:
     max_speed: float = 3.0
     max_accel: float = 0.45
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, telemetry: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = {
             "label": self.label,
             "minimum": self.minimum,
             "maximum": self.maximum,
@@ -75,6 +80,9 @@ class JointState:
             "target": round(self.target, 1),
             "velocity": round(self.velocity, 2),
         }
+        if telemetry:
+            payload.update(telemetry)
+        return payload
 
 
 @dataclass
@@ -114,8 +122,21 @@ class CommandCentreState:
     training_job_output_model: str = ""
     active_classifier_path: str = DEFAULT_ACTIVE_CLASSIFIER
     available_classifiers: list[str] = field(default_factory=list)
+    joint_telemetry: dict[str, dict[str, Any]] = field(default_factory=dict)
+    ik_test_square: str = "e4"
+    ik_test_status: str = "idle"
+    ik_test_message: str = "Choose a square to solve inverse kinematics."
+    ik_test_active_joint: str | None = None
+    ik_test_step_index: int = 0
+    ik_test_step_total: int = 0
+    ik_test_pose: dict[str, float] | None = None
+    ik_test_joint_deg: dict[str, float] | None = None
 
     def snapshot(self) -> dict[str, Any]:
+        joint_payload = {}
+        for name, joint in self.joints.items():
+            telemetry = self.joint_telemetry.get(name)
+            joint_payload[name] = joint.to_dict(telemetry)
         return {
             "system": {
                 "mode": self.mode,
@@ -171,7 +192,17 @@ class CommandCentreState:
                 "active_classifier_path": self.active_classifier_path,
                 "available_classifiers": self.available_classifiers,
             },
-            "joints": {name: joint.to_dict() for name, joint in self.joints.items()},
+            "ik_test": {
+                "square": self.ik_test_square,
+                "status": self.ik_test_status,
+                "message": self.ik_test_message,
+                "active_joint": self.ik_test_active_joint,
+                "step_index": self.ik_test_step_index,
+                "step_total": self.ik_test_step_total,
+                "pose": self.ik_test_pose,
+                "joint_deg": self.ik_test_joint_deg,
+            },
+            "joints": joint_payload,
             "logs": self.logs[-14:],
         }
 
@@ -303,6 +334,11 @@ class MockCommandCentre:
 
     def __init__(self) -> None:
         self._camera_manager = CameraManager()
+        self._web_kinematics = WebKinematicsModel.from_digital_twin_config(DEFAULT_DIGITAL_TWIN_CONFIG)
+        self._ik_joint_order = ["base", "shoulder", "elbow", "wrist"]
+        self._ik_pending_targets: dict[str, float] = {}
+        self._ik_pending_joint_deg: dict[str, float] = {}
+        self._ik_step_cursor = 0
         available_cameras = self._camera_manager.list_sources()
         self._training_snapshots: list[TrainingSnapshot] = []
         self._training_process: subprocess.Popen[str] | None = None
@@ -331,6 +367,7 @@ class MockCommandCentre:
                 "gripper": JointState("Gripper", 180, 340, 340.0, 340.0, max_speed=2.0, max_accel=0.3),
             },
         )
+        self._refresh_joint_telemetry_locked()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -352,8 +389,30 @@ class MockCommandCentre:
         self._camera_manager.stop()
         self._thread.join(timeout=1.0)
 
+    def _refresh_joint_telemetry_locked(self) -> None:
+        telemetry: dict[str, dict[str, Any]] = {}
+        for name, joint in self.state.joints.items():
+            joint_telemetry = self._web_kinematics.telemetry_for_joint(
+                name=name,
+                current=joint.current,
+                target=joint.target,
+                pulse_min=joint.minimum,
+                pulse_max=joint.maximum,
+            )
+            if joint_telemetry is None:
+                continue
+            telemetry[name] = {
+                "minimum_deg": round(joint_telemetry.minimum_deg, 1),
+                "maximum_deg": round(joint_telemetry.maximum_deg, 1),
+                "target_deg": round(joint_telemetry.target_deg, 1),
+                "current_deg": round(joint_telemetry.current_deg, 1),
+                "control_mode": joint_telemetry.control_mode,
+            }
+        self.state.joint_telemetry = telemetry
+
     def get_snapshot(self) -> dict[str, Any]:
         with self._lock:
+            self._refresh_joint_telemetry_locked()
             self.state.camera_connected = self._camera_manager.is_running()
             self.state.training_snapshot_count = len(self._training_snapshots)
             self.state.training_saved_snapshot_count = sum(1 for snapshot in self._training_snapshots if snapshot.saved)
@@ -428,9 +487,100 @@ class MockCommandCentre:
             if joint is None:
                 return False, f"Unknown joint '{name}'"
             joint.target = float(max(joint.minimum, min(joint.maximum, round(value))))
+            coupled_targets = self._web_kinematics.maybe_apply_coupled_targets(self.state.joints, name)
+            for joint_name, target in coupled_targets.items():
+                if joint_name in self.state.joints:
+                    self.state.joints[joint_name].target = float(target)
+            self._refresh_joint_telemetry_locked()
             self.state.last_action = f"Updated {joint.label} target"
             self._append_log("robot", f"{joint.label} target set to {int(joint.target)}")
+            if name in {"shoulder", "elbow"} and "wrist" in coupled_targets:
+                self._append_log("robot", f"Wrist auto-level target set to {int(coupled_targets['wrist'])}")
         return True, "ok"
+
+    def solve_square_inverse_kinematics(self, square: str) -> tuple[bool, str]:
+        normalized = square.strip().lower()
+        if not normalized:
+            return False, "Square is required"
+        try:
+            pose, solved = self._web_kinematics.solve_square_pickup(normalized)
+        except Exception as exc:
+            with self._lock:
+                self.state.ik_test_square = normalized
+                self.state.ik_test_status = "error"
+                self.state.ik_test_message = str(exc)
+                self.state.ik_test_active_joint = None
+                self.state.ik_test_step_index = 0
+                self.state.ik_test_step_total = 0
+                self.state.ik_test_pose = None
+                self.state.ik_test_joint_deg = None
+                self._ik_pending_targets = {}
+                self._ik_pending_joint_deg = {}
+                self._ik_step_cursor = 0
+                self._append_log("error", f"IK solve failed for {normalized}: {exc}")
+            return False, str(exc)
+
+        with self._lock:
+            pending_targets: dict[str, float] = {}
+            for name, angle in solved.to_dict().items():
+                joint = self.state.joints.get(name)
+                if joint is None or not self._web_kinematics.has_joint(name):
+                    continue
+                pulse = self._web_kinematics.degrees_to_pulse(name, angle, joint.minimum, joint.maximum)
+                pending_targets[name] = float(max(joint.minimum, min(joint.maximum, round(pulse))))
+            self._ik_pending_targets = pending_targets
+            self._ik_pending_joint_deg = solved.to_dict()
+            self._ik_step_cursor = 0
+            for name, angle in solved.to_dict().items():
+                if name not in self._ik_pending_joint_deg:
+                    continue
+            self.state.ik_test_square = normalized
+            self.state.ik_test_status = "ready"
+            self.state.ik_test_message = f"Solution staged for {normalized}. Apply one joint at a time."
+            self.state.ik_test_active_joint = self._ik_joint_order[0] if self._ik_pending_targets else None
+            self.state.ik_test_step_index = 0
+            self.state.ik_test_step_total = len(self._ik_pending_targets)
+            self.state.ik_test_pose = {
+                "x_mm": round(pose.x_mm, 1),
+                "y_mm": round(pose.y_mm, 1),
+                "z_mm": round(pose.z_mm, 1),
+            }
+            self.state.ik_test_joint_deg = {name: round(angle, 1) for name, angle in solved.to_dict().items()}
+            self.state.last_action = f"IK square test staged for {normalized}"
+            self._append_log("robot", f"IK square test staged for {normalized}")
+        return True, "ok"
+
+    def advance_square_inverse_kinematics(self) -> tuple[bool, str]:
+        with self._lock:
+            while self._ik_step_cursor < len(self._ik_joint_order):
+                joint_name = self._ik_joint_order[self._ik_step_cursor]
+                self._ik_step_cursor += 1
+                if joint_name not in self._ik_pending_targets:
+                    continue
+                joint = self.state.joints.get(joint_name)
+                if joint is None:
+                    continue
+                joint.target = self._ik_pending_targets[joint_name]
+                self._refresh_joint_telemetry_locked()
+                self.state.ik_test_step_index = self._ik_step_cursor
+                remaining = [
+                    name for name in self._ik_joint_order[self._ik_step_cursor :] if name in self._ik_pending_targets
+                ]
+                self.state.ik_test_active_joint = remaining[0] if remaining else None
+                self.state.ik_test_status = "stepping" if remaining else "complete"
+                self.state.ik_test_message = (
+                    f"Applied {joint_name}. Click Next Joint to continue."
+                    if remaining
+                    else "All staged joints applied."
+                )
+                self.state.last_action = f"IK joint step applied: {joint_name}"
+                self._append_log("robot", f"IK staged joint applied: {joint_name}")
+                return True, "ok"
+
+            self.state.ik_test_status = "complete"
+            self.state.ik_test_active_joint = None
+            self.state.ik_test_message = "All staged joints already applied."
+            return False, "No more staged joints"
 
     def set_camera_source(self, source_label: str) -> tuple[bool, str]:
         source = source_label.strip()
@@ -510,11 +660,15 @@ class MockCommandCentre:
             if upper == "reset_pose":
                 for joint in self.state.joints.values():
                     joint.target = joint.current
-                self.state.joints["base"].target = 375.0
-                self.state.joints["shoulder"].target = 375.0
-                self.state.joints["elbow"].target = 385.0
-                self.state.joints["wrist"].target = 375.0
+                for name, joint in self.state.joints.items():
+                    if self._web_kinematics.has_joint(name):
+                        joint.target = self._web_kinematics.home_pulse(name, joint.minimum, joint.maximum)
+                coupled_targets = self._web_kinematics.maybe_apply_coupled_targets(self.state.joints, "shoulder")
+                for joint_name, target in coupled_targets.items():
+                    if joint_name in self.state.joints:
+                        self.state.joints[joint_name].target = float(target)
                 self.state.joints["gripper"].target = 340.0
+                self._refresh_joint_telemetry_locked()
                 self.state.last_action = "Resetting joints to defaults"
                 self._append_log("robot", "Resetting all joints to default pose")
                 return True, "ok"
@@ -1352,6 +1506,15 @@ class CommandCentreRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/play/start":
             ok, message = self._app.start_play_mode()
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/kinematics/square-test":
+            square = str(body.get("square", ""))
+            ok, message = self._app.solve_square_inverse_kinematics(square)
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/kinematics/square-test/next":
+            ok, message = self._app.advance_square_inverse_kinematics()
             self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
             return
         if parsed.path == "/api/settings/active-classifier":

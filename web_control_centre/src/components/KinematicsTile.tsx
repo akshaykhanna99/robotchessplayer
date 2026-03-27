@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import twinConfig from "../../../config/digital_twin_setup_v1.json";
-import type { JointState } from "../types";
+import type { IkTestState, JointState } from "../types";
 import type { DigitalTwinConfig } from "../digitalTwinTypes";
 import { DigitalTwinScene } from "./DigitalTwinScene";
 import { Tile } from "./Tile";
 
 type KinematicsTileProps = {
   joints: Record<string, JointState>;
+  ikTest: IkTestState;
   onJointChange: (joint: string, value: number) => Promise<void> | void;
+  onIkSquareTest: (square: string) => Promise<void> | void;
+  onIkSquareStep: () => Promise<void> | void;
 };
 
 const HOME_STORAGE_KEY = "robot-chess-player:digital-twin-home-pose";
@@ -19,17 +22,18 @@ function widthPercent(value: number, min: number, max: number) {
   return ((value - min) / (max - min)) * 100;
 }
 
-function mapPulseToDegrees(value: number, pulseMin: number, pulseMax: number, degMin: number, degMax: number) {
-  if (pulseMax <= pulseMin) {
-    return degMin;
+function mapDegreesToPulse(value: number, degMin: number, degMax: number, pulseMin: number, pulseMax: number) {
+  if (degMax <= degMin) {
+    return pulseMin;
   }
-  const ratio = (value - pulseMin) / (pulseMax - pulseMin);
-  return degMin + ratio * (degMax - degMin);
+  const ratio = (value - degMin) / (degMax - degMin);
+  return pulseMin + ratio * (pulseMax - pulseMin);
 }
 
-export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
+export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, onIkSquareStep }: KinematicsTileProps) {
   const config = twinConfig as DigitalTwinConfig;
   const [showLegend, setShowLegend] = useState(true);
+  const [ikSquare, setIkSquare] = useState(ikTest.square || "e4");
   const jointLegend = [
     { name: "Base Joint", color: "#ffd166" },
     { name: "Shoulder Joint", color: "#ef476f" },
@@ -50,12 +54,33 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
   const defaultHomePose = useMemo(
     () =>
       Object.fromEntries(
-        orderedJointEntries.map(([name, joint]) => [name, joint.target]),
+        orderedJointEntries.map(([name, joint]) => {
+          const jointConfig = config.robot.joints[name];
+          const pulse = mapDegreesToPulse(
+            jointConfig.home_deg,
+            jointConfig.min_deg,
+            jointConfig.max_deg,
+            joint.minimum,
+            joint.maximum,
+          );
+          return [name, Math.round(pulse)];
+        }),
       ) as Record<string, number>,
-    [orderedJointEntries],
+    [config.robot.joints, orderedJointEntries],
   );
   const [homePose, setHomePose] = useState<Record<string, number>>(defaultHomePose);
   const [localTargets, setLocalTargets] = useState<Record<string, number>>(defaultHomePose);
+  const displayJointAngles = useMemo(
+    () =>
+      Object.fromEntries(
+        orderedJointEntries.map(([name, joint]) => [name, joint.target_deg ?? config.robot.joints[name].home_deg]),
+      ) as Record<string, number>,
+    [config.robot.joints, orderedJointEntries],
+  );
+
+  useEffect(() => {
+    setIkSquare(ikTest.square || "e4");
+  }, [ikTest.square]);
 
   useEffect(() => {
     const savedHomePose = window.localStorage.getItem(HOME_STORAGE_KEY);
@@ -89,13 +114,18 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
 
   async function handleResetHome() {
     for (const [jointName, value] of Object.entries(homePose)) {
+      if (jointName === "wrist") {
+        continue;
+      }
       setLocalTargets((prev) => ({ ...prev, [jointName]: value }));
       await onJointChange(jointName, value);
     }
   }
 
   function handleSaveHome() {
-    const nextHomePose = { ...localTargets };
+    const nextHomePose = Object.fromEntries(
+      Object.entries(localTargets).filter(([jointName]) => jointName !== "wrist"),
+    ) as Record<string, number>;
     setHomePose(nextHomePose);
     window.localStorage.setItem(HOME_STORAGE_KEY, JSON.stringify(nextHomePose));
   }
@@ -106,7 +136,7 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
         <div className="kinematics-stage">
           <DigitalTwinScene
             config={config}
-            jointAngles={localTargets}
+            jointAngles={displayJointAngles}
             overlay={
               <>
                 <button
@@ -182,6 +212,69 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
               </>
             }
           />
+          <aside className="ik-test-panel">
+            <div className="ik-test-head">
+              <h3>Square IK</h3>
+              <span className={`pill ${ikTest.status === "error" ? "pill-alert" : "pill-muted"}`}>{ikTest.status}</span>
+            </div>
+            <label className="ik-test-input-group">
+              <span className="metric-label">Square</span>
+              <div className="ik-test-row">
+                <input
+                  className="camera-select ik-test-input"
+                  value={ikSquare}
+                  maxLength={2}
+                  onChange={(event) => setIkSquare(event.target.value.toLowerCase())}
+                />
+                <button type="button" className="ik-test-solve-button" onClick={() => void onIkSquareTest(ikSquare)}>
+                  Solve
+                </button>
+              </div>
+            </label>
+            <div className="ik-test-actions">
+              <button
+                type="button"
+                className="kinematics-action-button secondary"
+                disabled={ikTest.step_index >= ikTest.step_total || ikTest.step_total === 0}
+                onClick={() => void onIkSquareStep()}
+              >
+                Next Joint
+              </button>
+              <span className="ik-test-step">
+                Step {ikTest.step_index}/{ikTest.step_total}
+              </span>
+            </div>
+            <p className="ik-test-message">{ikTest.message}</p>
+            <div className="ik-test-grid">
+              <div className="ik-test-block">
+                <span className="metric-label">Pose</span>
+                {ikTest.pose ? (
+                  <div className="ik-test-values">
+                    <span>X {ikTest.pose.x_mm}</span>
+                    <span>Y {ikTest.pose.y_mm}</span>
+                    <span>Z {ikTest.pose.z_mm}</span>
+                  </div>
+                ) : (
+                  <span className="ik-test-empty">No solved pose</span>
+                )}
+              </div>
+              <div className="ik-test-block">
+                <span className="metric-label">Solved Joints</span>
+                {ikTest.active_joint ? <span className="ik-test-active">Next: {ikTest.active_joint}</span> : null}
+                {ikTest.joint_deg ? (
+                  <div className="ik-test-values">
+                    {Object.entries(ikTest.joint_deg).map(([name, value]) => (
+                      <span key={name}>
+                        {name} {value}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="ik-test-empty">No solved joints</span>
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
         <div className="kinematics-controls">
           <div className="kinematics-control-head">
@@ -199,23 +292,13 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
             {orderedJointEntries.map(([name, joint]) => (
               <article className="joint-card compact minimalist" key={name}>
                 {(() => {
-                  const jointConfig = config.robot.joints[name];
                   const targetPulse = localTargets[name] ?? joint.target;
                   const actualPulse = joint.current;
-                  const targetDeg = mapPulseToDegrees(
-                    targetPulse,
-                    joint.minimum,
-                    joint.maximum,
-                    jointConfig.min_deg,
-                    jointConfig.max_deg,
-                  );
-                  const actualDeg = mapPulseToDegrees(
-                    actualPulse,
-                    joint.minimum,
-                    joint.maximum,
-                    jointConfig.min_deg,
-                    jointConfig.max_deg,
-                  );
+                  const targetDeg = joint.target_deg ?? config.robot.joints[name].home_deg;
+                  const actualDeg = joint.current_deg ?? targetDeg;
+                  const minimumDeg = joint.minimum_deg ?? config.robot.joints[name].min_deg;
+                  const maximumDeg = joint.maximum_deg ?? config.robot.joints[name].max_deg;
+                  const controlMode = joint.control_mode ?? "manual";
 
                   return (
                     <>
@@ -229,6 +312,7 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
                   max={joint.maximum}
                   step={1}
                   value={targetPulse}
+                  disabled={controlMode !== "manual"}
                   onChange={(event) => void handleSliderChange(name, Number(event.target.value))}
                 />
                 <div className="joint-values-block">
@@ -244,6 +328,12 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
                     <span>Target pulse</span>
                     <span>{Math.round(targetPulse)}</span>
                   </div>
+                  {controlMode !== "manual" ? (
+                    <div className="joint-values-row">
+                      <span>Control mode</span>
+                      <span>{controlMode}</span>
+                    </div>
+                  ) : null}
                   <div className="joint-values-row">
                     <span>Actual pulse</span>
                     <span>{Math.round(actualPulse)}</span>
@@ -254,7 +344,7 @@ export function KinematicsTile({ joints, onJointChange }: KinematicsTileProps) {
                     pulse {joint.minimum} to {joint.maximum}
                   </span>
                   <span>
-                    deg {jointConfig.min_deg} to {jointConfig.max_deg}
+                    deg {minimumDeg} to {maximumDeg}
                   </span>
                 </div>
                 <div className="joint-rail">

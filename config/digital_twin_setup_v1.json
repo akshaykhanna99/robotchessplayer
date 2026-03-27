@@ -61,8 +61,9 @@
       "shoulder": {
         "axis": "y",
         "min_deg": -90.0,
-        "max_deg": 150.0,
-        "home_deg": 45.0
+        "max_deg": 90.0,
+        "home_deg": 45.0,
+        "solver_sign": -1.0
       },
       "elbow": {
         "axis": "y",
@@ -72,7 +73,7 @@
       },
       "wrist": {
         "axis": "y",
-        "min_deg": -180.0,
+        "min_deg": -360.0,
         "max_deg": 180.0,
         "home_deg": -100
       }

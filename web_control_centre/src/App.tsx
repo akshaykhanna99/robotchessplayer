@@ -10,6 +10,8 @@ import {
   setActiveClassifier,
   setCameraSource,
   setJointTarget,
+  solveIkSquareTest,
+  stepIkSquareTest,
   startPlayMode,
   startModelTraining,
   setTrainingDatasetPath,
@@ -30,6 +32,8 @@ export default function App() {
   const [state, setState] = useState<CommandCentreState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [workflowMode, setWorkflowMode] = useState<"label" | "play" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,11 +141,21 @@ export default function App() {
     setWorkflowMode(mode);
   }
 
+  async function handleIkSquareTest(square: string) {
+    await solveIkSquareTest(square);
+    setState(await fetchState());
+  }
+
+  async function handleIkSquareStep() {
+    await stepIkSquareTest();
+    setState(await fetchState());
+  }
+
   if (!state) {
     return (
       <div className="app-shell">
         <header className="hero">
-          <h1>Robot Chess Player</h1>
+          <h1>Autonomous Chess Player</h1>
         </header>
         <section className="tile">
           <div className="empty-state">{error ?? "Loading command-centre state..."}</div>
@@ -153,14 +167,47 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="hero">
-        <h1>Robot Chess Player</h1>
+        <h1>Autonomous Chess Player</h1>
+        <nav className="top-pill-nav" aria-label="Primary sections">
+          <button type="button" className="top-pill-link" onClick={() => setSettingsOpen((value) => !value)}>
+            Settings
+          </button>
+          <button type="button" className="top-pill-link" onClick={() => setLogsOpen((value) => !value)}>
+            Logs
+          </button>
+        </nav>
       </header>
 
-      <main className="dashboard-grid">
-        <div className="main-column">
+      <div
+        className={[
+          "page-frame",
+          settingsOpen ? "left-open" : "",
+          logsOpen ? "right-open" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <aside className={`side-panel side-panel-left ${settingsOpen ? "open" : ""}`} aria-hidden={!settingsOpen}>
+          <div className="side-panel-head">
+            <h2>Settings</h2>
+            <button type="button" className="side-panel-close" onClick={() => setSettingsOpen(false)}>
+              ×
+            </button>
+          </div>
+          <div className="side-panel-body">
+            <GeneralSettingsTile
+              settings={state.settings}
+              onSetActiveClassifier={handleSetActiveClassifier}
+              embedded
+            />
+          </div>
+        </aside>
+
+        <main className="dashboard-grid">
           <VisionTile
             vision={state.vision}
             game={state.game}
+            logs={state.logs}
             cameraSource={state.system.camera_source}
             availableCameras={state.system.available_cameras}
             workflowMode={workflowMode}
@@ -169,11 +216,13 @@ export default function App() {
             onVisionCornerSelect={handleVisionCornerSelect}
             onWorkflowModeChange={handleWorkflowModeChange}
           />
-          <KinematicsTile joints={state.joints} onJointChange={handleJointChange} />
-        </div>
-        <div className="side-column">
-          <GeneralSettingsTile settings={state.settings} onSetActiveClassifier={handleSetActiveClassifier} />
-          <LogsTile logs={state.logs} />
+          <KinematicsTile
+            joints={state.joints}
+            ikTest={state.ik_test}
+            onJointChange={handleJointChange}
+            onIkSquareTest={handleIkSquareTest}
+            onIkSquareStep={handleIkSquareStep}
+          />
           <TrainingPanel
             training={state.training}
             active={workflowMode === "label"}
@@ -186,8 +235,20 @@ export default function App() {
             onCompleteSnapshot={handleCompleteTrainingSnapshot}
           />
           <ModelTrainingTile training={state.training} onStartTraining={handleStartModelTraining} />
-        </div>
-      </main>
+        </main>
+
+        <aside className={`side-panel side-panel-right ${logsOpen ? "open" : ""}`} aria-hidden={!logsOpen}>
+          <div className="side-panel-head">
+            <h2>Logs</h2>
+            <button type="button" className="side-panel-close" onClick={() => setLogsOpen(false)}>
+              ×
+            </button>
+          </div>
+          <div className="side-panel-body">
+            <LogsTile logs={state.logs} embedded />
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

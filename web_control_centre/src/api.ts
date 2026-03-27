@@ -161,3 +161,25 @@ export async function setActiveClassifier(classifierPath: string): Promise<void>
     throw new Error(`Failed to set active classifier '${classifierPath}'`);
   }
 }
+
+export async function solveIkSquareTest(square: string): Promise<void> {
+  const response = await fetch("/api/kinematics/square-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ square }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to solve IK for square '${square}'`);
+  }
+}
+
+export async function stepIkSquareTest(): Promise<void> {
+  const response = await fetch("/api/kinematics/square-test/next", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to advance IK joint step");
+  }
+}

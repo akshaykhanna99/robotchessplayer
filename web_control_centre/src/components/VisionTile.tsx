@@ -1,11 +1,12 @@
-import { useRef, type MouseEvent } from "react";
-import type { GameState, VisionState } from "../types";
+import { useMemo, useRef, type MouseEvent } from "react";
+import type { GameState, LogEntry, VisionState } from "../types";
 import { BoardPreview } from "./BoardPreview";
 import { Tile } from "./Tile";
 
 type VisionTileProps = {
   vision: VisionState;
   game: GameState;
+  logs: LogEntry[];
   cameraSource: string;
   availableCameras: string[];
   workflowMode: "label" | "play" | null;
@@ -18,6 +19,7 @@ type VisionTileProps = {
 export function VisionTile({
   vision,
   game,
+  logs,
   cameraSource,
   availableCameras,
   workflowMode,
@@ -27,6 +29,14 @@ export function VisionTile({
   onWorkflowModeChange,
 }: VisionTileProps) {
   const cameraImageRef = useRef<HTMLImageElement | null>(null);
+  const gameLogs = useMemo(() => {
+    const keywords = ["move", "turn", "capture", "castle", "check", "mate", "promotion", "suggested", "inference"];
+    const filtered = logs.filter((entry) => {
+      const message = entry.message.toLowerCase();
+      return entry.level.toLowerCase() === "game" || keywords.some((keyword) => message.includes(keyword));
+    });
+    return filtered.slice(-6).reverse();
+  }, [logs]);
 
   function handleCameraClick(event: MouseEvent<HTMLDivElement>) {
     if (!vision.corner_selection_active) {
@@ -106,66 +116,97 @@ export function VisionTile({
           />
         </div>
 
-        <div className="preprocessing-controls">
-          <span className="metric-label">Pre-processing</span>
-          <div className="preprocessing-row">
-            <label className="camera-select-group">
-              <span className="metric-label">Camera</span>
-              <select
-                className="camera-select"
-                value={cameraSource}
-                onChange={(event) => onCameraSourceChange(event.target.value)}
-              >
-                {!availableCameras.includes(cameraSource) ? (
-                  <option value={cameraSource}>{cameraSource}</option>
-                ) : null}
-                {availableCameras.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <div className="vision-lower">
+          <div className="preprocessing-controls">
+            <span className="metric-label">Pre-processing</span>
+            <div className="preprocessing-row">
+              <label className="camera-select-group">
+                <span className="metric-label">Camera</span>
+                <select
+                  className="camera-select"
+                  value={cameraSource}
+                  onChange={(event) => onCameraSourceChange(event.target.value)}
+                >
+                  {!availableCameras.includes(cameraSource) ? (
+                    <option value={cameraSource}>{cameraSource}</option>
+                  ) : null}
+                  {availableCameras.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <div className="camera-status-group">
-              <span className={`status-light ${vision.camera_connected ? "online" : "offline"}`} />
-              <span>{vision.camera_connected ? "Camera Online" : "Camera Offline"}</span>
+              <div className="camera-status-group">
+                <span className={`status-light ${vision.camera_connected ? "online" : "offline"}`} />
+                <span>{vision.camera_connected ? "Camera Online" : "Camera Offline"}</span>
+              </div>
+
+              <button type="button" onClick={() => onBoardProcessingAction("select_corners")}>
+                Select Corners
+              </button>
+              <button type="button" onClick={() => onBoardProcessingAction("reset_corners")}>
+                Reset Corners
+              </button>
             </div>
 
-            <button type="button" onClick={() => onBoardProcessingAction("select_corners")}>
-              Select Corners
-            </button>
-            <button type="button" onClick={() => onBoardProcessingAction("reset_corners")}>
-              Reset Corners
-            </button>
-          </div>
-
-          {vision.board_initialized ? (
-            <div className="workflow-mode-row">
-              <button
-                type="button"
-                className={workflowMode === "label" ? "workflow-button active" : "workflow-button"}
-                onClick={() => onWorkflowModeChange("label")}
-              >
-                Label
-              </button>
-              <button
-                type="button"
-                className={workflowMode === "play" ? "workflow-button active" : "workflow-button"}
-                onClick={() => onWorkflowModeChange("play")}
-              >
-                Play
-              </button>
-              <button type="button" onClick={() => onBoardProcessingAction("reset_board")}>
-                Reset Board
-              </button>
-              {workflowMode === "play" ? (
-                <button type="button" onClick={() => onBoardProcessingAction("run_inference")}>
-                  Run Inference
+            {vision.board_initialized ? (
+              <div className="workflow-mode-row">
+                <button
+                  type="button"
+                  className={workflowMode === "label" ? "workflow-button active" : "workflow-button"}
+                  onClick={() => onWorkflowModeChange("label")}
+                >
+                  Label
                 </button>
-              ) : null}
+                <button
+                  type="button"
+                  className={workflowMode === "play" ? "workflow-button active" : "workflow-button"}
+                  onClick={() => onWorkflowModeChange("play")}
+                >
+                  Play
+                </button>
+                <button type="button" onClick={() => onBoardProcessingAction("reset_board")}>
+                  Reset Board
+                </button>
+                {workflowMode === "play" ? (
+                  <button type="button" onClick={() => onBoardProcessingAction("run_inference")}>
+                    Run Inference
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          <div className="game-turn-log">
+            <div className="game-turn-log-head">
+              <span className="metric-label">Turn Log</span>
             </div>
-          ) : null}
+            <div className="game-turn-log-list">
+              {game.detected_move !== "-" ? (
+                <article className="game-turn-log-entry emphasis">
+                  <span className="game-turn-log-label">Detected</span>
+                  <span className="game-turn-log-message">{game.detected_move}</span>
+                </article>
+              ) : null}
+              {game.suggested_move !== "-" ? (
+                <article className="game-turn-log-entry emphasis">
+                  <span className="game-turn-log-label">Suggested</span>
+                  <span className="game-turn-log-message">{game.suggested_move}</span>
+                </article>
+              ) : null}
+              {gameLogs.length > 0 ? (
+                gameLogs.map((entry, index) => (
+                  <article className="game-turn-log-entry" key={`${entry.level}-${index}-${entry.message}`}>
+                    <span className="game-turn-log-label">{entry.level}</span>
+                    <span className="game-turn-log-message">{entry.message}</span>
+                  </article>
+                ))
+              ) : (
+                <div className="game-turn-log-empty">No turn-by-turn events yet.</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </Tile>

@@ -53,6 +53,21 @@ export type SettingsState = {
   available_classifiers: string[];
 };
 
+export type IkTestState = {
+  square: string;
+  status: string;
+  message: string;
+  active_joint: string | null;
+  step_index: number;
+  step_total: number;
+  pose: {
+    x_mm: number;
+    y_mm: number;
+    z_mm: number;
+  } | null;
+  joint_deg: Record<string, number> | null;
+};
+
 export type BoardState = {
   origin_x_mm: number;
   origin_y_mm: number;
@@ -66,6 +81,11 @@ export type JointState = {
   current: number;
   target: number;
   velocity: number;
+  minimum_deg?: number;
+  maximum_deg?: number;
+  target_deg?: number;
+  current_deg?: number;
+  control_mode?: string;
 };
 
 export type LogEntry = {
@@ -80,6 +100,7 @@ export type CommandCentreState = {
   robot: RobotState;
   training: TrainingState;
   settings: SettingsState;
+  ik_test: IkTestState;
   board: BoardState;
   joints: Record<string, JointState>;
   logs: LogEntry[];
