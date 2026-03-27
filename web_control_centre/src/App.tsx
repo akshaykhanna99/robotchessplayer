@@ -17,7 +17,6 @@ import {
   submitVisionCorner,
 } from "./api";
 import { GeneralSettingsTile } from "./components/GeneralSettingsTile";
-import { JointControlTile } from "./components/JointControlTile";
 import { KinematicsTile } from "./components/KinematicsTile";
 import { LogsTile } from "./components/LogsTile";
 import { ModelTrainingTile } from "./components/ModelTrainingTile";
@@ -170,7 +169,7 @@ export default function App() {
             onVisionCornerSelect={handleVisionCornerSelect}
             onWorkflowModeChange={handleWorkflowModeChange}
           />
-          <KinematicsTile />
+          <KinematicsTile joints={state.joints} onJointChange={handleJointChange} />
         </div>
         <div className="side-column">
           <GeneralSettingsTile settings={state.settings} onSetActiveClassifier={handleSetActiveClassifier} />
@@ -187,7 +186,6 @@ export default function App() {
             onCompleteSnapshot={handleCompleteTrainingSnapshot}
           />
           <ModelTrainingTile training={state.training} onStartTraining={handleStartModelTraining} />
-          <JointControlTile joints={state.joints} onJointChange={handleJointChange} />
         </div>
       </main>
     </div>

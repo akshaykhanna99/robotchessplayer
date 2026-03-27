@@ -35,19 +35,19 @@
       {
         "name": "shoulder",
         "length_mm": 150.0,
-        "radius_mm": 5.0,
-        "color": "#6f7a89"
+        "radius_mm": 2.0,
+        "color": "#6f3a89"
       },
       {
         "name": "elbow",
         "length_mm": 150.0,
-        "radius_mm": 5.0,
-        "color": "#7f8b99"
+        "radius_mm": 2.0,
+        "color": "#9f8b99"
       },
       {
         "name": "wrist",
         "length_mm": 21.0,
-        "radius_mm": 5.0,
+        "radius_mm": 2.0,
         "color": "#97a3b0"
       }
     ],
@@ -71,17 +71,17 @@
         "home_deg": 90.0
       },
       "wrist": {
-        "axis": "x",
+        "axis": "y",
         "min_deg": -180.0,
         "max_deg": 180.0,
-        "home_deg": -30.0
+        "home_deg": -100
       }
     }
   },
   "tool": {
     "type": "gripper",
     "mount_offset_mm": {
-      "x_mm": 10.0,
+      "x_mm": 0.0,
       "y_mm": 0.0,
       "z_mm": 0.0
     },

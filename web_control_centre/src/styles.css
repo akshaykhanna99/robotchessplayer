@@ -143,14 +143,206 @@ h1 {
   min-height: 360px;
   display: flex;
   flex-direction: column;
+  padding: 15px 0 15px;
+}
+
+.tile-kinematics .tile-head {
+  padding: 0 15px;
+}
+
+.kinematics-layout {
+  display: grid;
+  gap: 12px;
+}
+
+.kinematics-lower {
+  display: grid;
+  grid-template-columns: minmax(720px, 1fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .kinematics-stage {
+  position: relative;
   min-height: 0;
+  margin: 0 15px;
+  width: 100%;
+}
+
+.kinematics-controls,
+.kinematics-legend {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 249, 239, 0.9);
+}
+
+.kinematics-controls {
+  margin: 0 15px;
+}
+
+.kinematics-legend {
+  align-self: start;
+  height: fit-content;
+  width: 100%;
+}
+
+.kinematics-legend.overlay {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
+  width: min(240px, calc(100% - 28px));
+  background: rgba(255, 249, 239, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 32px rgba(15, 21, 28, 0.16);
+}
+
+.legend-toggle-button {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 4;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: #111111;
+  box-shadow: none;
+}
+
+.legend-toggle-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.kinematics-control-head {
+  display: grid;
+  gap: 10px;
+}
+
+.kinematics-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kinematics-action-button {
+  min-width: 112px;
+}
+
+.kinematics-action-button.secondary {
+  background: linear-gradient(180deg, rgba(31, 127, 123, 0.96), rgba(25, 98, 95, 0.94));
+}
+
+.kinematics-legend-section {
+  display: grid;
+  gap: 8px;
+}
+
+.kinematics-legend-section h3 {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 0.86rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.legend-swatch-joint {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.legend-swatch-link {
+  width: 18px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.joint-list.embedded {
+  display: grid;
+  gap: 10px;
+}
+
+.joint-list.embedded.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.joint-card.compact {
+  min-width: 0;
+  padding: 9px;
+}
+
+.joint-card-head.compact {
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.joint-card-head.compact.minimalist {
+  margin-bottom: 4px;
+}
+
+.joint-card.compact h3 {
+  font-size: 0.78rem;
+}
+
+.joint-readout.compact {
+  gap: 6px;
+  text-align: right;
+  font-size: 0.72rem;
+}
+
+.joint-values-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.joint-values-block {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.joint-values-row.emphasis {
+  color: var(--teal);
+}
+
+.joint-range-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  gap: 10px;
 }
 
 .digital-twin-stage {
   position: relative;
+  width: 100%;
   min-height: 430px;
   border-radius: 16px;
   overflow: hidden;
@@ -200,6 +392,17 @@ h1 {
   background: rgba(17, 23, 31, 0.84);
   color: #f8f4ea;
   font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.joint-label {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(17, 23, 31, 0.8);
+  color: #f8f4ea;
+  font-size: 0.56rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -556,6 +759,14 @@ button:disabled {
 }
 
 @media (max-width: 1080px) {
+  .kinematics-lower {
+    grid-template-columns: 1fr;
+  }
+
+  .joint-list.embedded.compact {
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  }
+
   .digital-twin-stage {
     min-height: 360px;
   }

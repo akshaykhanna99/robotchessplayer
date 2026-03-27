@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
+import { Quaternion, Vector3 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { DigitalTwinConfig, PieceTypeConfig } from "../digitalTwinTypes";
 
@@ -30,6 +32,8 @@ const STARTING_PIECES: Array<{ square: string; type: keyof DigitalTwinConfig["pi
 
 type DigitalTwinSceneProps = {
   config: DigitalTwinConfig;
+  jointAngles?: Partial<Record<string, number>>;
+  overlay?: ReactNode;
 };
 
 type ViewPreset = "iso" | "top" | "front" | "right";
@@ -102,6 +106,79 @@ function OriginMarker({ z }: { z: number }) {
   );
 }
 
+function JointAxes({
+  label,
+  size = 18,
+}: {
+  label: string;
+  size?: number;
+}) {
+  const axisRadius = 0.55;
+
+  return (
+    <group>
+      <mesh position={[size / 2, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <cylinderGeometry args={[axisRadius, axisRadius, size, 12]} />
+        <meshStandardMaterial color="#bf4040" />
+      </mesh>
+      <mesh position={[0, size / 2, 0]}>
+        <cylinderGeometry args={[axisRadius, axisRadius, size, 12]} />
+        <meshStandardMaterial color="#3c9b5d" />
+      </mesh>
+      <mesh position={[0, 0, size / 2]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[axisRadius, axisRadius, size, 12]} />
+        <meshStandardMaterial color="#346fc7" />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[1.8, 14, 14]} />
+        <meshStandardMaterial color="#f4efe2" emissive="#ffffff" emissiveIntensity={0.2} />
+      </mesh>
+      <Html position={[0, 0, size + 4]} center distanceFactor={16}>
+        <div className="joint-label">{label}</div>
+      </Html>
+    </group>
+  );
+}
+
+function OffsetConnector({
+  end,
+  radius,
+  color,
+}: {
+  end: [number, number, number];
+  radius: number;
+  color: string;
+}) {
+  const [x, y, z] = end;
+  const length = Math.sqrt(x * x + y * y + z * z);
+  if (length < 1e-6) {
+    return null;
+  }
+
+  const direction = new Vector3(x, y, z).normalize();
+  const quaternion = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), direction);
+  const midpoint: [number, number, number] = [x / 2, y / 2, z / 2];
+
+  return (
+    <mesh castShadow receiveShadow position={midpoint} quaternion={quaternion}>
+      <cylinderGeometry args={[radius, radius, length, 12]} />
+      <meshStandardMaterial color={color} />
+    </mesh>
+  );
+}
+
+const JOINT_COLORS = {
+  base: "#ffd166",
+  shoulder: "#ef476f",
+  elbow: "#06d6a0",
+  wrist: "#118ab2",
+} as const;
+
+const TOOL_COLORS = {
+  mount: "#f77f00",
+  pickup: "#8338ec",
+} as const;
+
 function Board({ config }: DigitalTwinSceneProps) {
   const { board } = config;
   const playableSize = board.square_size_mm * 8;
@@ -167,7 +244,7 @@ function Pieces({ config }: DigitalTwinSceneProps) {
   );
 }
 
-function RobotBase({ config }: DigitalTwinSceneProps) {
+function RobotBase({ config, jointAngles }: DigitalTwinSceneProps) {
   const { robot } = config;
   const { base_frame, base_geometry } = robot;
   const shoulderLink = robot.links.find((link) => link.name === "shoulder");
@@ -177,10 +254,15 @@ function RobotBase({ config }: DigitalTwinSceneProps) {
   const shoulderJoint = robot.joints.shoulder;
   const elbowJoint = robot.joints.elbow;
   const wristJoint = robot.joints.wrist;
-  const baseRotation = axisRotation(baseJoint.axis, baseJoint.home_deg + base_frame.yaw_deg);
-  const shoulderRotation = axisRotation(shoulderJoint.axis, shoulderJoint.home_deg);
-  const elbowRotation = axisRotation(elbowJoint.axis, elbowJoint.home_deg);
-  const wristRotation = axisRotation(wristJoint.axis, wristJoint.home_deg);
+  const baseDeg = jointAngles?.base ?? baseJoint.home_deg;
+  const shoulderDeg = jointAngles?.shoulder ?? shoulderJoint.home_deg;
+  const elbowDeg = jointAngles?.elbow ?? elbowJoint.home_deg;
+  const wristDeg = jointAngles?.wrist ?? wristJoint.home_deg;
+  const baseRotation = axisRotation(baseJoint.axis, baseDeg + base_frame.yaw_deg);
+  const shoulderRotation = axisRotation(shoulderJoint.axis, shoulderDeg);
+  const elbowRotation = axisRotation(elbowJoint.axis, elbowDeg);
+  const wristRotation = axisRotation(wristJoint.axis, wristDeg);
+  const { mount_offset_mm, pickup_point_offset_mm } = config.tool;
 
   return (
     <group position={[base_frame.x_mm, base_frame.y_mm, base_frame.z_mm]} rotation={baseRotation}>
@@ -189,21 +271,28 @@ function RobotBase({ config }: DigitalTwinSceneProps) {
         <meshStandardMaterial color={base_geometry.color} />
       </mesh>
       <mesh castShadow>
-        <sphereGeometry args={[3.2, 20, 20]} />
-        <meshStandardMaterial color="#ffd166" emissive="#7c5a00" emissiveIntensity={0.35} />
+        <sphereGeometry args={[4.6, 22, 22]} />
+        <meshStandardMaterial color={JOINT_COLORS.base} emissive="#7c5a00" emissiveIntensity={0.35} />
       </mesh>
+      <JointAxes label="Base" size={20} />
       {shoulderLink ? (
         <group rotation={shoulderRotation}>
+          <mesh castShadow>
+            <sphereGeometry args={[4.0, 20, 20]} />
+            <meshStandardMaterial color={JOINT_COLORS.shoulder} />
+          </mesh>
+          <JointAxes label="Shoulder" size={15} />
           <mesh castShadow receiveShadow position={[0, 0, shoulderLink.length_mm / 2]} rotation={[Math.PI / 2, 0, 0]}>
             <cylinderGeometry args={[shoulderLink.radius_mm, shoulderLink.radius_mm, shoulderLink.length_mm, 32]} />
             <meshStandardMaterial color={shoulderLink.color} />
           </mesh>
           <mesh castShadow position={[0, 0, shoulderLink.length_mm]}>
-            <sphereGeometry args={[shoulderLink.radius_mm * 1.1, 20, 20]} />
-            <meshStandardMaterial color="#d7dfe6" />
+            <sphereGeometry args={[6.0, 22, 22]} />
+            <meshStandardMaterial color={JOINT_COLORS.elbow} />
           </mesh>
           {elbowLink ? (
             <group position={[0, 0, shoulderLink.length_mm]} rotation={elbowRotation}>
+              <JointAxes label="Elbow" />
               <mesh
                 castShadow
                 receiveShadow
@@ -213,28 +302,76 @@ function RobotBase({ config }: DigitalTwinSceneProps) {
                 <cylinderGeometry args={[elbowLink.radius_mm, elbowLink.radius_mm, elbowLink.length_mm, 32]} />
                 <meshStandardMaterial color={elbowLink.color} />
               </mesh>
-              <mesh castShadow position={[0, 0, elbowLink.length_mm]}>
-                <sphereGeometry args={[elbowLink.radius_mm * 1.1, 20, 20]} />
-                <meshStandardMaterial color="#d7dfe6" />
-              </mesh>
-              {wristLink ? (
-                <group position={[0, 0, elbowLink.length_mm]}>
-                  <mesh
-                    castShadow
-                    receiveShadow
-                    position={[-wristLink.length_mm / 2, 0, 0]}
-                    rotation={[0, 0, Math.PI / 2]}
-                  >
-                    <cylinderGeometry args={[wristLink.radius_mm, wristLink.radius_mm, wristLink.length_mm, 32]} />
-                    <meshStandardMaterial color={wristLink.color} />
-                  </mesh>
-                  <mesh castShadow position={[-wristLink.length_mm, 0, 0]}>
-                    <sphereGeometry args={[wristLink.radius_mm * 1.15, 20, 20]} />
-                    <meshStandardMaterial color="#d7dfe6" />
-                  </mesh>
-                  <group position={[-wristLink.length_mm, 0, 0]} rotation={wristRotation} />
-                </group>
-              ) : null}
+              <group position={[0, 0, elbowLink.length_mm]} rotation={wristRotation}>
+                <mesh castShadow>
+                  <sphereGeometry args={[4.0, 20, 20]} />
+                  <meshStandardMaterial color={JOINT_COLORS.wrist} />
+                </mesh>
+                <JointAxes label="Wrist" size={15} />
+                {wristLink ? (
+                  <>
+                    <mesh castShadow receiveShadow position={[0, -wristLink.length_mm / 2, 0]}>
+                      <cylinderGeometry args={[wristLink.radius_mm, wristLink.radius_mm, wristLink.length_mm, 32]} />
+                      <meshStandardMaterial color={wristLink.color} />
+                    </mesh>
+                    <mesh castShadow position={[0, -wristLink.length_mm, 0]}>
+                      <sphereGeometry args={[5.0, 20, 20]} />
+                      <meshStandardMaterial color="#8ecae6" transparent opacity={0.45} />
+                    </mesh>
+                    <group position={[0, -wristLink.length_mm, 0]}>
+                      <OffsetConnector
+                        end={[mount_offset_mm.x_mm, mount_offset_mm.y_mm, mount_offset_mm.z_mm]}
+                        radius={0.9}
+                        color={TOOL_COLORS.mount}
+                      />
+                      <mesh position={[mount_offset_mm.x_mm, mount_offset_mm.y_mm, mount_offset_mm.z_mm]} castShadow>
+                        <sphereGeometry args={[4.4, 18, 18]} />
+                        <meshStandardMaterial color={TOOL_COLORS.mount} />
+                      </mesh>
+                      <Html
+                        position={[mount_offset_mm.x_mm, mount_offset_mm.y_mm, mount_offset_mm.z_mm + 12]}
+                        center
+                        distanceFactor={18}
+                      >
+                        <div className="joint-label">Mount</div>
+                      </Html>
+                      <group position={[mount_offset_mm.x_mm, mount_offset_mm.y_mm, mount_offset_mm.z_mm]}>
+                        <OffsetConnector
+                          end={[
+                            pickup_point_offset_mm.x_mm,
+                            pickup_point_offset_mm.y_mm,
+                            pickup_point_offset_mm.z_mm,
+                          ]}
+                          radius={0.8}
+                          color={TOOL_COLORS.pickup}
+                        />
+                        <mesh
+                          position={[
+                            pickup_point_offset_mm.x_mm,
+                            pickup_point_offset_mm.y_mm,
+                            pickup_point_offset_mm.z_mm,
+                          ]}
+                          castShadow
+                        >
+                          <sphereGeometry args={[3.8, 18, 18]} />
+                          <meshStandardMaterial color={TOOL_COLORS.pickup} />
+                        </mesh>
+                        <Html
+                          position={[
+                            pickup_point_offset_mm.x_mm,
+                            pickup_point_offset_mm.y_mm,
+                            pickup_point_offset_mm.z_mm + 10,
+                          ]}
+                          center
+                          distanceFactor={18}
+                        >
+                          <div className="joint-label">Pickup</div>
+                        </Html>
+                      </group>
+                    </group>
+                  </>
+                ) : null}
+              </group>
             </group>
           ) : null}
         </group>
@@ -245,6 +382,7 @@ function RobotBase({ config }: DigitalTwinSceneProps) {
 
 function SceneContent({
   config,
+  jointAngles,
   viewPreset,
   controls,
   onControlsChange,
@@ -262,14 +400,14 @@ function SceneContent({
       <directionalLight position={[220, 140, 120]} intensity={0.28} />
       <Board config={config} />
       <Pieces config={config} />
-      <RobotBase config={config} />
+      <RobotBase config={config} jointAngles={jointAngles} />
       <OriginMarker z={config.board.origin_z_mm} />
       <OrbitControls makeDefault ref={onControlsChange} />
     </>
   );
 }
 
-export function DigitalTwinScene({ config }: DigitalTwinSceneProps) {
+export function DigitalTwinScene({ config, jointAngles, overlay }: DigitalTwinSceneProps) {
   const [viewPreset, setViewPreset] = useState<ViewPreset>("iso");
   const [controls, setControls] = useState<OrbitControlsImpl | null>(null);
 
@@ -298,8 +436,15 @@ export function DigitalTwinScene({ config }: DigitalTwinSceneProps) {
         </button>
       </div>
       <Canvas shadows camera={{ fov: 34, near: 1, far: 4000 }}>
-        <SceneContent config={config} viewPreset={viewPreset} controls={controls} onControlsChange={setControls} />
+        <SceneContent
+          config={config}
+          jointAngles={jointAngles}
+          viewPreset={viewPreset}
+          controls={controls}
+          onControlsChange={setControls}
+        />
       </Canvas>
+      {overlay}
     </div>
   );
 }
