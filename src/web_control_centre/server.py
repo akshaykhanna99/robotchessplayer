@@ -21,6 +21,9 @@ import numpy as np
 from src.game.engine import StockfishEngineClient
 from src.game.session import ChessGameSession
 from src.game.move_detection import detect_observed_move
+from src.robot.adapters.pca9686_serial_robot import Pca9686SerialRobotArm
+from src.robot.config import load_physical_setup_config
+from src.robot.kinematics import SimpleArmKinematics
 from src.robot.web_kinematics import WebKinematicsModel
 
 
@@ -37,6 +40,10 @@ DEFAULT_STOCKFISH_PATH = os.getenv("WEB_CONTROL_CENTRE_STOCKFISH_PATH", "/usr/lo
 DEFAULT_DIGITAL_TWIN_CONFIG = os.getenv(
     "WEB_CONTROL_CENTRE_DIGITAL_TWIN_CONFIG",
     str(PROJECT_ROOT / "config" / "digital_twin_setup_v1.json"),
+)
+DEFAULT_PHYSICAL_SETUP_CONFIG = os.getenv(
+    "WEB_CONTROL_CENTRE_PHYSICAL_SETUP_CONFIG",
+    str(PROJECT_ROOT / "config" / "physical_setup_v1.json"),
 )
 DEFAULT_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 TRAINING_LABEL_TO_FOLDER = {
@@ -106,6 +113,9 @@ class CommandCentreState:
     fen: str = DEFAULT_START_FEN
     executing: bool = False
     gripper_state: str = "open"
+    control_target: str = "virtual"
+    hardware_available: bool = False
+    hardware_status: str = "Hardware control unavailable"
     board_origin_mm: tuple[float, float] = (118.0, 86.0)
     square_size_mm: float = 38.0
     last_action: str = "Initialised web command centre"
@@ -170,6 +180,9 @@ class CommandCentreState:
             "robot": {
                 "executing": self.executing,
                 "gripper_state": self.gripper_state,
+                "control_target": self.control_target,
+                "hardware_available": self.hardware_available,
+                "hardware_status": self.hardware_status,
             },
             "board": {
                 "origin_x_mm": self.board_origin_mm[0],
@@ -335,6 +348,10 @@ class MockCommandCentre:
     def __init__(self) -> None:
         self._camera_manager = CameraManager()
         self._web_kinematics = WebKinematicsModel.from_digital_twin_config(DEFAULT_DIGITAL_TWIN_CONFIG)
+        self._hardware_robot: Pca9686SerialRobotArm | None = None
+        self._hardware_poll_interval_s = 0.35
+        self._hardware_poll_block_until_s = 0.0
+        self._last_hardware_poll_s = 0.0
         self._ik_joint_order = ["base", "shoulder", "elbow", "wrist"]
         self._ik_pending_targets: dict[str, float] = {}
         self._ik_pending_joint_deg: dict[str, float] = {}
@@ -367,7 +384,9 @@ class MockCommandCentre:
                 "gripper": JointState("Gripper", 180, 340, 340.0, 340.0, max_speed=2.0, max_accel=0.3),
             },
         )
+        self._initialize_hardware_robot()
         self._refresh_joint_telemetry_locked()
+        self._session_home_joint_deg = self._capture_session_home_from_state()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -387,7 +406,202 @@ class MockCommandCentre:
     def stop(self) -> None:
         self._stop_event.set()
         self._camera_manager.stop()
+        if self._hardware_robot is not None:
+            try:
+                self._hardware_robot.disconnect()
+            except Exception:
+                pass
         self._thread.join(timeout=1.0)
+
+    def _initialize_hardware_robot(self) -> None:
+        config_path = Path(DEFAULT_PHYSICAL_SETUP_CONFIG)
+        if not DEFAULT_PHYSICAL_SETUP_CONFIG or not config_path.exists():
+            self.state.hardware_available = False
+            self.state.hardware_status = "No physical setup config configured"
+            return
+        try:
+            setup = load_physical_setup_config(config_path)
+            kinematics = SimpleArmKinematics.from_robot_config(setup.robot)
+            robot = Pca9686SerialRobotArm(config=setup.robot, kinematics=kinematics)
+            robot.connect()
+        except Exception as exc:
+            self._hardware_robot = None
+            self.state.hardware_available = False
+            self.state.hardware_status = f"Hardware unavailable: {exc}"
+            self._append_log("error", self.state.hardware_status)
+            return
+
+        self._hardware_robot = robot
+        self._apply_hardware_joint_profile(setup)
+        self.state.hardware_available = True
+        self.state.setup_name = setup.setup_name
+        self.state.robot_name = setup.robot.name
+        self.state.serial_port = setup.robot.transport.port
+        self.state.hardware_status = f"Connected on {setup.robot.transport.port}"
+        self._append_log("robot", f"Hardware adapter connected on {setup.robot.transport.port}")
+
+    def _apply_hardware_joint_profile(self, setup) -> None:
+        calibration = setup.robot.calibration
+        if calibration is None:
+            return
+        pulse_limits = calibration.pulse_limits
+        for joint_name, pulse_range in pulse_limits.items():
+            joint = self.state.joints.get(joint_name)
+            if joint is None:
+                continue
+            joint.minimum = int(round(pulse_range.min_pulse))
+            joint.maximum = int(round(pulse_range.max_pulse))
+            joint.current = float(pulse_range.home_pulse)
+            joint.target = float(pulse_range.home_pulse)
+            joint.velocity = 0.0
+
+    def _capture_session_home_from_state(self) -> dict[str, float]:
+        home: dict[str, float] = {}
+        for name, telemetry in self.state.joint_telemetry.items():
+            value = telemetry.get("target_deg", telemetry.get("current_deg"))
+            if value is None:
+                continue
+            home[name] = float(value)
+        return home
+
+    def _gripper_target_pulse_locked(self, closed: bool) -> float:
+        joint = self.state.joints["gripper"]
+        if self._hardware_robot is not None and self._hardware_robot.config.gripper:
+            calibration = self._hardware_robot.config.calibration
+            pulse_limits = calibration.pulse_limits.get("gripper") if calibration else None
+            gripper_config = self._hardware_robot.config.gripper
+            if pulse_limits is not None:
+                open_deg = float(gripper_config.open_deg)
+                close_deg = float(gripper_config.close_deg)
+                open_pulse = float(pulse_limits.max_pulse)
+                close_pulse = float(pulse_limits.min_pulse)
+                angle = close_deg if closed else open_deg
+                if abs(close_deg - open_deg) < 1e-6:
+                    pulse = close_pulse if closed else open_pulse
+                else:
+                    ratio = (angle - open_deg) / (close_deg - open_deg)
+                    pulse = open_pulse + ratio * (close_pulse - open_pulse)
+                return float(max(joint.minimum, min(joint.maximum, round(pulse))))
+        return 180.0 if closed else 340.0
+
+    def _send_targets_to_hardware_locked(self, joint_names: list[str] | None = None) -> tuple[bool, str]:
+        if self._hardware_robot is None or not self.state.hardware_available:
+            return False, self.state.hardware_status
+        try:
+            protocol = self._hardware_robot.config.transport.protocol.strip().lower()
+            if protocol == "channel_pulse":
+                if joint_names is None:
+                    joint_targets = {name: joint.target for name, joint in self.state.joints.items()}
+                else:
+                    joint_targets = {
+                        name: self.state.joints[name].target for name in joint_names if name in self.state.joints
+                    }
+                self._hardware_robot.send_joint_pulses(joint_targets)
+            else:
+                full_joint_targets = self._web_kinematics.target_joint_degrees_from_pulses(self.state.joints)
+                if joint_names is None:
+                    joint_targets = full_joint_targets
+                else:
+                    joint_targets = {name: full_joint_targets[name] for name in joint_names if name in full_joint_targets}
+                self._hardware_robot.send_joint_positions(joint_targets)
+            self._hardware_poll_block_until_s = time.time() + 0.25
+        except Exception as exc:
+            self.state.hardware_status = f"Hardware command failed: {exc}"
+            self.state.hardware_available = False
+            self._append_log("error", self.state.hardware_status)
+            return False, self.state.hardware_status
+        return True, "ok"
+
+    def _refresh_hardware_joint_currents_locked(self) -> None:
+        if self._hardware_robot is None or not self.state.hardware_available:
+            return
+        try:
+            channel_pulses = self._hardware_robot.read_channel_pulses()
+        except Exception as exc:
+            self.state.hardware_status = f"Hardware status failed: {exc}"
+            self._append_log("error", self.state.hardware_status)
+            return
+
+        channel_map = {
+            "base": self._hardware_robot.config.channels.base,
+            "shoulder": self._hardware_robot.config.channels.shoulder,
+            "elbow": self._hardware_robot.config.channels.elbow,
+            "wrist": self._hardware_robot.config.channels.wrist,
+            "gripper": self._hardware_robot.config.channels.gripper,
+        }
+        for joint_name, channel in channel_map.items():
+            if channel not in channel_pulses or joint_name not in self.state.joints:
+                continue
+            joint = self.state.joints[joint_name]
+            joint.current = float(channel_pulses[channel])
+            joint.velocity = 0.0
+
+    def set_joint_angle_target(self, name: str, degrees: float) -> tuple[bool, str]:
+        with self._lock:
+            joint = self.state.joints.get(name)
+            if joint is None:
+                return False, f"Unknown joint '{name}'"
+            if self.state.control_target == "virtual" and name == "wrist":
+                return False, "Wrist is auto-leveled in virtual mode"
+            telemetry = self.state.joint_telemetry.get(name)
+            minimum_deg = telemetry["minimum_deg"] if telemetry else None
+            maximum_deg = telemetry["maximum_deg"] if telemetry else None
+            if minimum_deg is None or maximum_deg is None:
+                return False, f"No degree mapping configured for joint '{name}'"
+            clamped_deg = max(float(minimum_deg), min(float(maximum_deg), float(degrees)))
+            pulse = self._web_kinematics.degrees_to_pulse(name, clamped_deg, joint.minimum, joint.maximum)
+            joint.target = float(max(joint.minimum, min(joint.maximum, round(pulse))))
+            if self.state.control_target == "virtual" and name in {"shoulder", "elbow"}:
+                shoulder_joint = self.state.joints.get("shoulder")
+                elbow_joint = self.state.joints.get("elbow")
+                wrist_joint = self.state.joints.get("wrist")
+                if shoulder_joint is not None and elbow_joint is not None and wrist_joint is not None:
+                    shoulder_deg = self._web_kinematics.pulse_to_degrees(
+                        "shoulder", shoulder_joint.target, shoulder_joint.minimum, shoulder_joint.maximum
+                    )
+                    elbow_deg = self._web_kinematics.pulse_to_degrees(
+                        "elbow", elbow_joint.target, elbow_joint.minimum, elbow_joint.maximum
+                    )
+                    wrist_deg = self._web_kinematics.auto_wrist_degrees(shoulder_deg, elbow_deg)
+                    wrist_pulse = self._web_kinematics.degrees_to_pulse(
+                        "wrist", wrist_deg, wrist_joint.minimum, wrist_joint.maximum
+                    )
+                    wrist_joint.target = float(max(wrist_joint.minimum, min(wrist_joint.maximum, round(wrist_pulse))))
+            self._refresh_joint_telemetry_locked()
+            self.state.last_action = f"Updated {joint.label} target angle"
+            self._append_log("robot", f"{joint.label} target set to {clamped_deg:.1f} deg")
+            if self.state.control_target == "hardware":
+                ok, message = self._send_targets_to_hardware_locked([name])
+                if not ok:
+                    return False, message
+        return True, "ok"
+
+    def save_session_home(self) -> tuple[bool, str]:
+        with self._lock:
+            self._refresh_joint_telemetry_locked()
+            self._session_home_joint_deg = self._capture_session_home_from_state()
+            self.state.last_action = "Saved session home pose"
+            self._append_log("robot", "Session home pose saved")
+        return True, "ok"
+
+    def go_to_session_home(self) -> tuple[bool, str]:
+        with self._lock:
+            if not self._session_home_joint_deg:
+                return False, "No session home pose saved"
+            for joint_name, degrees in self._session_home_joint_deg.items():
+                joint = self.state.joints.get(joint_name)
+                if joint is None:
+                    continue
+                pulse = self._web_kinematics.degrees_to_pulse(joint_name, degrees, joint.minimum, joint.maximum)
+                joint.target = float(max(joint.minimum, min(joint.maximum, round(pulse))))
+            self._refresh_joint_telemetry_locked()
+            self.state.last_action = "Moving to session home pose"
+            self._append_log("robot", "Moving to session home pose")
+            if self.state.control_target == "hardware":
+                ok, message = self._send_targets_to_hardware_locked()
+                if not ok:
+                    return False, message
+        return True, "ok"
 
     def _refresh_joint_telemetry_locked(self) -> None:
         telemetry: dict[str, dict[str, Any]] = {}
@@ -398,6 +612,7 @@ class MockCommandCentre:
                 target=joint.target,
                 pulse_min=joint.minimum,
                 pulse_max=joint.maximum,
+                virtual_auto_wrist=self.state.control_target == "virtual",
             )
             if joint_telemetry is None:
                 continue
@@ -487,15 +702,46 @@ class MockCommandCentre:
             if joint is None:
                 return False, f"Unknown joint '{name}'"
             joint.target = float(max(joint.minimum, min(joint.maximum, round(value))))
-            coupled_targets = self._web_kinematics.maybe_apply_coupled_targets(self.state.joints, name)
-            for joint_name, target in coupled_targets.items():
-                if joint_name in self.state.joints:
-                    self.state.joints[joint_name].target = float(target)
             self._refresh_joint_telemetry_locked()
             self.state.last_action = f"Updated {joint.label} target"
             self._append_log("robot", f"{joint.label} target set to {int(joint.target)}")
-            if name in {"shoulder", "elbow"} and "wrist" in coupled_targets:
-                self._append_log("robot", f"Wrist auto-level target set to {int(coupled_targets['wrist'])}")
+            if self.state.control_target == "hardware":
+                ok, message = self._send_targets_to_hardware_locked()
+                if not ok:
+                    return False, message
+        return True, "ok"
+
+    def set_control_target(self, target: str) -> tuple[bool, str]:
+        normalized = target.strip().lower()
+        if normalized not in {"virtual", "hardware"}:
+            return False, f"Unknown control target '{target}'"
+        with self._lock:
+            if normalized == "hardware" and not self.state.hardware_available:
+                return False, self.state.hardware_status
+            self.state.control_target = normalized
+            if normalized == "virtual":
+                shoulder_joint = self.state.joints.get("shoulder")
+                elbow_joint = self.state.joints.get("elbow")
+                wrist_joint = self.state.joints.get("wrist")
+                if shoulder_joint is not None and elbow_joint is not None and wrist_joint is not None:
+                    shoulder_deg = self._web_kinematics.pulse_to_degrees(
+                        "shoulder", shoulder_joint.target, shoulder_joint.minimum, shoulder_joint.maximum
+                    )
+                    elbow_deg = self._web_kinematics.pulse_to_degrees(
+                        "elbow", elbow_joint.target, elbow_joint.minimum, elbow_joint.maximum
+                    )
+                    wrist_deg = self._web_kinematics.auto_wrist_degrees(shoulder_deg, elbow_deg)
+                    wrist_pulse = self._web_kinematics.degrees_to_pulse(
+                        "wrist", wrist_deg, wrist_joint.minimum, wrist_joint.maximum
+                    )
+                    wrist_joint.target = float(max(wrist_joint.minimum, min(wrist_joint.maximum, round(wrist_pulse))))
+                    self._refresh_joint_telemetry_locked()
+            self.state.last_action = f"Control target set to {normalized}"
+            self._append_log("robot", f"Control target set to {normalized}")
+            if normalized == "hardware":
+                ok, message = self._send_targets_to_hardware_locked()
+                if not ok:
+                    return False, message
         return True, "ok"
 
     def solve_square_inverse_kinematics(self, square: str) -> tuple[bool, str]:
@@ -674,7 +920,13 @@ class MockCommandCentre:
                 return True, "ok"
             if upper == "toggle_gripper":
                 self.state.gripper_state = "closed" if self.state.gripper_state == "open" else "open"
-                self.state.joints["gripper"].target = 180.0 if self.state.gripper_state == "closed" else 340.0
+                self.state.joints["gripper"].target = self._gripper_target_pulse_locked(
+                    self.state.gripper_state == "closed"
+                )
+                if self.state.control_target == "hardware":
+                    ok, message = self._send_targets_to_hardware_locked(["gripper"])
+                    if not ok:
+                        return False, message
                 self.state.last_action = f"Gripper {self.state.gripper_state}"
                 self._append_log("robot", f"Gripper {self.state.gripper_state}")
                 return True, "ok"
@@ -1364,23 +1616,34 @@ class MockCommandCentre:
         while not self._stop_event.is_set():
             with self._lock:
                 self.state.camera_connected = self._camera_manager.is_running()
-                for joint in self.state.joints.values():
-                    delta = joint.target - joint.current
-                    if abs(delta) < 0.05 and abs(joint.velocity) < 0.05:
-                        joint.current = joint.target
-                        joint.velocity = 0.0
-                        continue
-                    direction = 1.0 if delta > 0 else -1.0
-                    desired_velocity = direction * min(joint.max_speed, abs(delta))
-                    if joint.velocity < desired_velocity:
-                        joint.velocity = min(joint.velocity + joint.max_accel, desired_velocity)
-                    elif joint.velocity > desired_velocity:
-                        joint.velocity = max(joint.velocity - joint.max_accel, desired_velocity)
-                    if abs(delta) <= abs(joint.velocity):
-                        joint.current = joint.target
-                        joint.velocity = 0.0
-                    else:
-                        joint.current += joint.velocity
+                now_s = time.time()
+                if (
+                    self.state.control_target == "hardware"
+                    and self.state.hardware_available
+                    and self._hardware_robot is not None
+                    and now_s >= self._hardware_poll_block_until_s
+                    and (now_s - self._last_hardware_poll_s) >= self._hardware_poll_interval_s
+                ):
+                    self._refresh_hardware_joint_currents_locked()
+                    self._last_hardware_poll_s = now_s
+                else:
+                    for joint in self.state.joints.values():
+                        delta = joint.target - joint.current
+                        if abs(delta) < 0.05 and abs(joint.velocity) < 0.05:
+                            joint.current = joint.target
+                            joint.velocity = 0.0
+                            continue
+                        direction = 1.0 if delta > 0 else -1.0
+                        desired_velocity = direction * min(joint.max_speed, abs(delta))
+                        if joint.velocity < desired_velocity:
+                            joint.velocity = min(joint.velocity + joint.max_accel, desired_velocity)
+                        elif joint.velocity > desired_velocity:
+                            joint.velocity = max(joint.velocity - joint.max_accel, desired_velocity)
+                        if abs(delta) <= abs(joint.velocity):
+                            joint.current = joint.target
+                            joint.velocity = 0.0
+                        else:
+                            joint.current += joint.velocity
                 if self.state.executing and self.state.camera_connected:
                     self.state.last_action = "Robot executing planned move"
             time.sleep(UPDATE_INTERVAL_S)
@@ -1440,6 +1703,16 @@ class CommandCentreRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.BAD_REQUEST, {"ok": False, "message": "Invalid joint value"})
                 return
             ok, message = self._app.set_joint_target(joint, value)
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/joint-angle-target":
+            joint = str(body.get("joint", ""))
+            try:
+                value = float(body.get("value", 0))
+            except (TypeError, ValueError):
+                self._write_json(HTTPStatus.BAD_REQUEST, {"ok": False, "message": "Invalid joint angle"})
+                return
+            ok, message = self._app.set_joint_angle_target(joint, value)
             self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
             return
         if parsed.path == "/api/camera/select":
@@ -1520,6 +1793,19 @@ class CommandCentreRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/settings/active-classifier":
             classifier_path = str(body.get("classifier_path", ""))
             ok, message = self._app.set_active_classifier(classifier_path)
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/robot/control-target":
+            target = str(body.get("target", ""))
+            ok, message = self._app.set_control_target(target)
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/robot/home":
+            ok, message = self._app.go_to_session_home()
+            self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
+            return
+        if parsed.path == "/api/robot/home/save":
+            ok, message = self._app.save_session_home()
             self._write_json(HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST, {"ok": ok, "message": message})
             return
         self._write_json(HTTPStatus.NOT_FOUND, {"ok": False, "message": "Not found"})

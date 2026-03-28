@@ -30,6 +30,17 @@ export async function setJointTarget(joint: string, value: number): Promise<void
   }
 }
 
+export async function setJointAngleTarget(joint: string, value: number): Promise<void> {
+  const response = await fetch("/api/joint-angle-target", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ joint, value }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update joint angle '${joint}'`);
+  }
+}
+
 export async function setCameraSource(source: string): Promise<void> {
   const response = await fetch("/api/camera/select", {
     method: "POST",
@@ -181,5 +192,38 @@ export async function stepIkSquareTest(): Promise<void> {
   });
   if (!response.ok) {
     throw new Error("Failed to advance IK joint step");
+  }
+}
+
+export async function setRobotControlTarget(target: "virtual" | "hardware"): Promise<void> {
+  const response = await fetch("/api/robot/control-target", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to set control target '${target}'`);
+  }
+}
+
+export async function moveRobotToHome(): Promise<void> {
+  const response = await fetch("/api/robot/home", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to move robot to home pose");
+  }
+}
+
+export async function saveRobotHome(): Promise<void> {
+  const response = await fetch("/api/robot/home/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to save robot home pose");
   }
 }

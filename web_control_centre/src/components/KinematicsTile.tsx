@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import twinConfig from "../../../config/digital_twin_setup_v1.json";
-import type { IkTestState, JointState } from "../types";
+import type { IkTestState, JointState, RobotState } from "../types";
 import type { DigitalTwinConfig } from "../digitalTwinTypes";
 import { DigitalTwinScene } from "./DigitalTwinScene";
 import { Tile } from "./Tile";
 
 type KinematicsTileProps = {
   joints: Record<string, JointState>;
+  robot: RobotState;
   ikTest: IkTestState;
   onJointChange: (joint: string, value: number) => Promise<void> | void;
   onIkSquareTest: (square: string) => Promise<void> | void;
   onIkSquareStep: () => Promise<void> | void;
+  onRobotControlTarget: (target: "virtual" | "hardware") => Promise<void> | void;
+  onRobotHome: () => Promise<void> | void;
+  onRobotSaveHome: () => Promise<void> | void;
+  onToggleGripper: () => Promise<void> | void;
 };
-
-const HOME_STORAGE_KEY = "robot-chess-player:digital-twin-home-pose";
 
 function widthPercent(value: number, min: number, max: number) {
   if (max <= min) {
@@ -22,15 +25,18 @@ function widthPercent(value: number, min: number, max: number) {
   return ((value - min) / (max - min)) * 100;
 }
 
-function mapDegreesToPulse(value: number, degMin: number, degMax: number, pulseMin: number, pulseMax: number) {
-  if (degMax <= degMin) {
-    return pulseMin;
-  }
-  const ratio = (value - degMin) / (degMax - degMin);
-  return pulseMin + ratio * (pulseMax - pulseMin);
-}
-
-export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, onIkSquareStep }: KinematicsTileProps) {
+export function KinematicsTile({
+  joints,
+  robot,
+  ikTest,
+  onJointChange,
+  onIkSquareTest,
+  onIkSquareStep,
+  onRobotControlTarget,
+  onRobotHome,
+  onRobotSaveHome,
+  onToggleGripper,
+}: KinematicsTileProps) {
   const config = twinConfig as DigitalTwinConfig;
   const [showLegend, setShowLegend] = useState(true);
   const [ikSquare, setIkSquare] = useState(ikTest.square || "e4");
@@ -51,25 +57,17 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
         .map((name) => [name, joints[name]] as const),
     [joints],
   );
-  const defaultHomePose = useMemo(
+  const defaultPose = useMemo(
     () =>
       Object.fromEntries(
-        orderedJointEntries.map(([name, joint]) => {
+        orderedJointEntries.map(([name]) => {
           const jointConfig = config.robot.joints[name];
-          const pulse = mapDegreesToPulse(
-            jointConfig.home_deg,
-            jointConfig.min_deg,
-            jointConfig.max_deg,
-            joint.minimum,
-            joint.maximum,
-          );
-          return [name, Math.round(pulse)];
+          return [name, jointConfig.home_deg];
         }),
       ) as Record<string, number>,
     [config.robot.joints, orderedJointEntries],
   );
-  const [homePose, setHomePose] = useState<Record<string, number>>(defaultHomePose);
-  const [localTargets, setLocalTargets] = useState<Record<string, number>>(defaultHomePose);
+  const [localTargets, setLocalTargets] = useState<Record<string, number>>(defaultPose);
   const displayJointAngles = useMemo(
     () =>
       Object.fromEntries(
@@ -83,51 +81,22 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
   }, [ikTest.square]);
 
   useEffect(() => {
-    const savedHomePose = window.localStorage.getItem(HOME_STORAGE_KEY);
-    if (savedHomePose) {
-      try {
-        const parsed = JSON.parse(savedHomePose) as Record<string, number>;
-        setHomePose({ ...defaultHomePose, ...parsed });
-      } catch {
-        setHomePose(defaultHomePose);
-      }
-    } else {
-      setHomePose(defaultHomePose);
-    }
-    setLocalTargets((prev) => ({ ...defaultHomePose, ...prev }));
-  }, [defaultHomePose]);
+    setLocalTargets((prev) => ({ ...defaultPose, ...prev }));
+  }, [defaultPose]);
 
   useEffect(() => {
     setLocalTargets((prev) => {
       const next = { ...prev };
       for (const [name, joint] of orderedJointEntries) {
-        next[name] = joint.target;
+        next[name] = joint.target_deg ?? config.robot.joints[name].home_deg;
       }
       return next;
     });
-  }, [orderedJointEntries]);
+  }, [config.robot.joints, orderedJointEntries]);
 
   async function handleSliderChange(jointName: string, value: number) {
     setLocalTargets((prev) => ({ ...prev, [jointName]: value }));
     await onJointChange(jointName, value);
-  }
-
-  async function handleResetHome() {
-    for (const [jointName, value] of Object.entries(homePose)) {
-      if (jointName === "wrist") {
-        continue;
-      }
-      setLocalTargets((prev) => ({ ...prev, [jointName]: value }));
-      await onJointChange(jointName, value);
-    }
-  }
-
-  function handleSaveHome() {
-    const nextHomePose = Object.fromEntries(
-      Object.entries(localTargets).filter(([jointName]) => jointName !== "wrist"),
-    ) as Record<string, number>;
-    setHomePose(nextHomePose);
-    window.localStorage.setItem(HOME_STORAGE_KEY, JSON.stringify(nextHomePose));
   }
 
   return (
@@ -278,13 +247,41 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
         </div>
         <div className="kinematics-controls">
           <div className="kinematics-control-head">
-            <h3>Pose Control</h3>
+            <div className="kinematics-control-title">
+              <h3>Pose Control</h3>
+              <div className="control-target-toggle" role="group" aria-label="Robot control target">
+                <button
+                  type="button"
+                  className={robot.control_target === "virtual" ? "toggle-chip active" : "toggle-chip"}
+                  onClick={() => void onRobotControlTarget("virtual")}
+                >
+                  Virtual
+                </button>
+                <button
+                  type="button"
+                  className={robot.control_target === "hardware" ? "toggle-chip active" : "toggle-chip"}
+                  onClick={() => void onRobotControlTarget("hardware")}
+                  disabled={!robot.hardware_available}
+                  title={robot.hardware_available ? "Control real robot arm" : robot.hardware_status}
+                >
+                  Real Robot
+                </button>
+              </div>
+            </div>
+            <div className="control-target-status">{robot.hardware_status}</div>
             <div className="kinematics-action-row">
-              <button type="button" className="kinematics-action-button" onClick={handleResetHome}>
+              <button type="button" className="kinematics-action-button" onClick={() => void onRobotHome()}>
                 Home
               </button>
-              <button type="button" className="kinematics-action-button secondary" onClick={handleSaveHome}>
+              <button type="button" className="kinematics-action-button secondary" onClick={() => void onRobotSaveHome()}>
                 Save Home
+              </button>
+              <button
+                type="button"
+                className={robot.gripper_state === "closed" ? "kinematics-action-button" : "kinematics-action-button secondary"}
+                onClick={() => void onToggleGripper()}
+              >
+                Gripper {robot.gripper_state === "closed" ? "On" : "Off"}
               </button>
             </div>
           </div>
@@ -292,8 +289,7 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
             {orderedJointEntries.map(([name, joint]) => (
               <article className="joint-card compact minimalist" key={name}>
                 {(() => {
-                  const targetPulse = localTargets[name] ?? joint.target;
-                  const actualPulse = joint.current;
+                  const targetAngle = localTargets[name] ?? joint.target_deg ?? config.robot.joints[name].home_deg;
                   const targetDeg = joint.target_deg ?? config.robot.joints[name].home_deg;
                   const actualDeg = joint.current_deg ?? targetDeg;
                   const minimumDeg = joint.minimum_deg ?? config.robot.joints[name].min_deg;
@@ -308,10 +304,10 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
                 <input
                   className="joint-slider"
                   type="range"
-                  min={joint.minimum}
-                  max={joint.maximum}
-                  step={1}
-                  value={targetPulse}
+                  min={minimumDeg}
+                  max={maximumDeg}
+                  step={0.5}
+                  value={targetAngle}
                   disabled={controlMode !== "manual"}
                   onChange={(event) => void handleSliderChange(name, Number(event.target.value))}
                 />
@@ -326,7 +322,7 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
                   </div>
                   <div className="joint-values-row">
                     <span>Target pulse</span>
-                    <span>{Math.round(targetPulse)}</span>
+                    <span>{Math.round(joint.target)}</span>
                   </div>
                   {controlMode !== "manual" ? (
                     <div className="joint-values-row">
@@ -336,7 +332,7 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
                   ) : null}
                   <div className="joint-values-row">
                     <span>Actual pulse</span>
-                    <span>{Math.round(actualPulse)}</span>
+                    <span>{Math.round(joint.current)}</span>
                   </div>
                 </div>
                 <div className="joint-range-row">
@@ -350,11 +346,11 @@ export function KinematicsTile({ joints, ikTest, onJointChange, onIkSquareTest, 
                 <div className="joint-rail">
                   <div
                     className="joint-target-bar"
-                    style={{ width: `${widthPercent(targetPulse, joint.minimum, joint.maximum)}%` }}
+                    style={{ width: `${widthPercent(targetDeg, minimumDeg, maximumDeg)}%` }}
                   />
                   <div
                     className="joint-current-bar"
-                    style={{ width: `${widthPercent(joint.current, joint.minimum, joint.maximum)}%` }}
+                    style={{ width: `${widthPercent(actualDeg, minimumDeg, maximumDeg)}%` }}
                   />
                 </div>
                     </>

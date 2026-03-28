@@ -142,39 +142,48 @@ export function VisionTile({
                 <span className={`status-light ${vision.camera_connected ? "online" : "offline"}`} />
                 <span>{vision.camera_connected ? "Camera Online" : "Camera Offline"}</span>
               </div>
+            </div>
 
-              <button type="button" onClick={() => onBoardProcessingAction("select_corners")}>
+            <div className="preprocessing-button-row">
+              <button type="button" className="preprocessing-button" onClick={() => onBoardProcessingAction("select_corners")}>
                 Select Corners
               </button>
-              <button type="button" onClick={() => onBoardProcessingAction("reset_corners")}>
+              <button type="button" className="preprocessing-button" onClick={() => onBoardProcessingAction("reset_corners")}>
                 Reset Corners
               </button>
             </div>
 
             {vision.board_initialized ? (
-              <div className="workflow-mode-row">
+              <div className="preprocessing-button-row">
                 <button
                   type="button"
-                  className={workflowMode === "label" ? "workflow-button active" : "workflow-button"}
+                  className={workflowMode === "label" ? "workflow-button preprocessing-button active" : "workflow-button preprocessing-button"}
                   onClick={() => onWorkflowModeChange("label")}
                 >
                   Label
                 </button>
                 <button
                   type="button"
-                  className={workflowMode === "play" ? "workflow-button active" : "workflow-button"}
+                  className={workflowMode === "play" ? "workflow-button preprocessing-button active" : "workflow-button preprocessing-button"}
                   onClick={() => onWorkflowModeChange("play")}
                 >
                   Play
                 </button>
-                <button type="button" onClick={() => onBoardProcessingAction("reset_board")}>
+              </div>
+            ) : null}
+            {vision.board_initialized ? (
+              <div className="preprocessing-button-row">
+                <button type="button" className="preprocessing-button" onClick={() => onBoardProcessingAction("reset_board")}>
                   Reset Board
                 </button>
-                {workflowMode === "play" ? (
-                  <button type="button" onClick={() => onBoardProcessingAction("run_inference")}>
-                    Run Inference
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="preprocessing-button"
+                  onClick={() => onBoardProcessingAction("run_inference")}
+                  disabled={workflowMode !== "play"}
+                >
+                  Run Inference
+                </button>
               </div>
             ) : null}
           </div>

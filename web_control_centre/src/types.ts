@@ -33,6 +33,9 @@ export type GameState = {
 export type RobotState = {
   executing: boolean;
   gripper_state: string;
+  control_target: string;
+  hardware_available: boolean;
+  hardware_status: string;
 };
 
 export type TrainingState = {

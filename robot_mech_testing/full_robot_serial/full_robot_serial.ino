@@ -8,6 +8,8 @@
 //
 // Additional commands:
 //   STATUS          Print all current channel pulse values
+//   STATUS_JSON     Print all current channel pulse values as JSON
+//   GET <channel>   Print one channel pulse value
 //   RESET           Move all servos to their startup defaults
 //   HELP            Print command help
 
@@ -84,6 +86,8 @@ void printHelp() {
   Serial.println("Commands:");
   Serial.println("  <channel>,<pulse>  set servo pulse");
   Serial.println("  STATUS             print all pulse values");
+  Serial.println("  STATUS_JSON        print all pulse values as JSON");
+  Serial.println("  GET <channel>      print one pulse value");
   Serial.println("  RESET              restore startup defaults");
   Serial.println("  HELP               show this help");
 }
@@ -95,6 +99,28 @@ void printStatus() {
     Serial.print(" = ");
     Serial.println(servoPulse[i]);
   }
+}
+
+void printStatusJson() {
+  Serial.print("{\"channels\":[");
+  for (uint8_t i = 0; i < NUM_SERVOS; ++i) {
+    if (i > 0) {
+      Serial.print(",");
+    }
+    Serial.print("{\"channel\":");
+    Serial.print(i);
+    Serial.print(",\"pulse\":");
+    Serial.print(servoPulse[i]);
+    Serial.print("}");
+  }
+  Serial.println("]}");
+}
+
+void printChannelStatus(uint8_t channel) {
+  Serial.print("CH ");
+  Serial.print(channel);
+  Serial.print(" = ");
+  Serial.println(servoPulse[channel]);
 }
 
 void applyServo(uint8_t channel, int pulse) {
@@ -142,6 +168,30 @@ void processServoCommand(const String &command) {
   Serial.println(servoPulse[channel]);
 }
 
+void processGetCommand(const String &command) {
+  int spaceIndex = command.indexOf(' ');
+  if (spaceIndex <= 0 || spaceIndex >= command.length() - 1) {
+    Serial.println("ERR invalid GET format, expected GET <channel>");
+    return;
+  }
+
+  String channelText = command.substring(spaceIndex + 1);
+  channelText.trim();
+
+  int channel = 0;
+  if (!parseIntStrict(channelText, channel)) {
+    Serial.println("ERR invalid channel integer");
+    return;
+  }
+
+  if (channel < 0 || channel >= NUM_SERVOS) {
+    Serial.println("ERR channel out of range");
+    return;
+  }
+
+  printChannelStatus((uint8_t)channel);
+}
+
 void processCommand(const String &rawCommand) {
   String command = rawCommand;
   command.trim();
@@ -159,6 +209,16 @@ void processCommand(const String &rawCommand) {
 
   if (upperCommand == "STATUS") {
     printStatus();
+    return;
+  }
+
+  if (upperCommand == "STATUS_JSON") {
+    printStatusJson();
+    return;
+  }
+
+  if (upperCommand.startsWith("GET ")) {
+    processGetCommand(command);
     return;
   }
 

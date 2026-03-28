@@ -64,6 +64,13 @@
         "shoulder": 1.0,
         "elbow": 1.0,
         "wrist": 1.0
+      },
+      "pulse_limits": {
+        "base": { "min_pulse": 250.0, "max_pulse": 500.0, "home_pulse": 375.0 },
+        "shoulder": { "min_pulse": 250.0, "max_pulse": 500.0, "home_pulse": 375.0 },
+        "elbow": { "min_pulse": 250.0, "max_pulse": 500.0, "home_pulse": 385.0 },
+        "wrist": { "min_pulse": 250.0, "max_pulse": 500.0, "home_pulse": 375.0 },
+        "gripper": { "min_pulse": 180.0, "max_pulse": 340.0, "home_pulse": 340.0 }
       }
     },
     "gripper": {

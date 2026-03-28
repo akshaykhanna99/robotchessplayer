@@ -485,6 +485,43 @@ h1 {
   gap: 10px;
 }
 
+.kinematics-control-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.control-target-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.toggle-chip {
+  min-width: 96px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.toggle-chip.active {
+  background: linear-gradient(180deg, rgba(31, 127, 123, 0.96), rgba(25, 98, 95, 0.94));
+  color: #f6f1e6;
+}
+
+.control-target-status {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
 .kinematics-action-row {
   display: flex;
   gap: 10px;
@@ -769,7 +806,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .vision-stage {
@@ -860,8 +897,10 @@ button:disabled {
 
 .preprocessing-controls {
   display: grid;
+  align-content: start;
   gap: 10px;
   padding: 12px 14px;
+  height: 100%;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--tile-strong);
@@ -869,11 +908,15 @@ button:disabled {
 
 .game-turn-log {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   padding: 12px 14px;
+  height: 100%;
+  min-height: 0;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255, 248, 239, 0.94);
+  overflow: hidden;
 }
 
 .game-turn-log-head {
@@ -886,6 +929,9 @@ button:disabled {
   display: grid;
   gap: 6px;
   align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .game-turn-log-entry {
@@ -931,6 +977,12 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.preprocessing-button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .workflow-mode-row {
   display: flex;
   gap: 10px;
@@ -939,6 +991,13 @@ button:disabled {
 
 .workflow-button {
   min-width: 124px;
+}
+
+.preprocessing-button {
+  min-width: 124px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  line-height: 1.2;
 }
 
 .workflow-button.active {

@@ -145,14 +145,6 @@ class WebKinematicsModel:
         ratio = (degrees - config.min_deg) / (config.max_deg - config.min_deg)
         return pulse_min + ratio * (pulse_max - pulse_min)
 
-    def auto_level_wrist_degrees(self, shoulder_deg: float, elbow_deg: float) -> float:
-        wrist = self._joint_configs["wrist"]
-        shoulder_internal = shoulder_deg * self._joint_configs["shoulder"].solver_sign
-        elbow_internal = elbow_deg * self._joint_configs["elbow"].solver_sign
-        wrist_internal = -(shoulder_internal + elbow_internal)
-        target = wrist_internal / wrist.solver_sign
-        return max(wrist.min_deg, min(wrist.max_deg, target))
-
     def solve_square_pickup(
         self,
         square: str,
@@ -167,33 +159,44 @@ class WebKinematicsModel:
             base_deg=base_deg,
             shoulder_deg=shoulder_deg,
             elbow_deg=elbow_deg,
-            wrist_deg=self.auto_level_wrist_degrees(shoulder_deg, elbow_deg),
+            wrist_deg=solved.wrist_deg * self._joint_configs["wrist"].solver_sign,
         )
 
     def maybe_apply_coupled_targets(self, joints: dict[str, Any], changed_joint: str) -> dict[str, float]:
-        targets = {name: float(joint.target) for name, joint in joints.items()}
-        if changed_joint not in {"shoulder", "elbow"}:
-            return targets
-        if not {"shoulder", "elbow", "wrist"}.issubset(joints):
-            return targets
-        shoulder = joints["shoulder"]
-        elbow = joints["elbow"]
-        wrist = joints["wrist"]
-        shoulder_deg = self.pulse_to_degrees("shoulder", targets["shoulder"], shoulder.minimum, shoulder.maximum)
-        elbow_deg = self.pulse_to_degrees("elbow", targets["elbow"], elbow.minimum, elbow.maximum)
-        wrist_deg = self.auto_level_wrist_degrees(shoulder_deg, elbow_deg)
-        targets["wrist"] = round(self.degrees_to_pulse("wrist", wrist_deg, wrist.minimum, wrist.maximum))
-        return targets
+        return {name: float(joint.target) for name, joint in joints.items()}
 
-    def telemetry_for_joint(self, name: str, current: float, target: float, pulse_min: float, pulse_max: float) -> WebJointTelemetry | None:
+    def auto_wrist_degrees(self, shoulder_deg: float, elbow_deg: float) -> float:
+        shoulder_home = self._joint_configs["shoulder"].home_deg
+        elbow_home = self._joint_configs["elbow"].home_deg
+        wrist_home = self._joint_configs["wrist"].home_deg
+        wrist_cfg = self._joint_configs["wrist"]
+        wrist_deg = wrist_home - ((shoulder_deg - shoulder_home) + (elbow_deg - elbow_home))
+        return max(wrist_cfg.min_deg, min(wrist_cfg.max_deg, wrist_deg))
+
+    def telemetry_for_joint(
+        self,
+        name: str,
+        current: float,
+        target: float,
+        pulse_min: float,
+        pulse_max: float,
+        virtual_auto_wrist: bool = False,
+    ) -> WebJointTelemetry | None:
         if name not in self._joint_configs:
             return None
         config = self._joint_configs[name]
-        control_mode = "auto-level" if name == "wrist" else "manual"
         return WebJointTelemetry(
             minimum_deg=config.min_deg,
             maximum_deg=config.max_deg,
             target_deg=self.pulse_to_degrees(name, target, pulse_min, pulse_max),
             current_deg=self.pulse_to_degrees(name, current, pulse_min, pulse_max),
-            control_mode=control_mode,
+            control_mode="auto-level" if virtual_auto_wrist and name == "wrist" else "manual",
         )
+
+    def target_joint_degrees_from_pulses(self, joints: dict[str, Any]) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for name, joint in joints.items():
+            if name not in self._joint_configs:
+                continue
+            result[name] = self.pulse_to_degrees(name, joint.target, joint.minimum, joint.maximum)
+        return result

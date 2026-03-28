@@ -4,12 +4,15 @@ import {
   captureTrainingSnapshot,
   completeTrainingSnapshot,
   fetchState,
+  moveRobotToHome,
   resetTrainingLabels,
+  saveRobotHome,
   sendAction,
   setActiveTrainingSnapshot,
   setActiveClassifier,
   setCameraSource,
-  setJointTarget,
+  setJointAngleTarget,
+  setRobotControlTarget,
   solveIkSquareTest,
   stepIkSquareTest,
   startPlayMode,
@@ -69,7 +72,7 @@ export default function App() {
   }, [state?.vision.board_initialized]);
 
   async function handleJointChange(joint: string, value: number) {
-    await setJointTarget(joint, value);
+    await setJointAngleTarget(joint, value);
     setState(await fetchState());
   }
 
@@ -151,6 +154,26 @@ export default function App() {
     setState(await fetchState());
   }
 
+  async function handleRobotControlTarget(target: "virtual" | "hardware") {
+    await setRobotControlTarget(target);
+    setState(await fetchState());
+  }
+
+  async function handleToggleGripper() {
+    await sendAction("toggle_gripper");
+    setState(await fetchState());
+  }
+
+  async function handleRobotHome() {
+    await moveRobotToHome();
+    setState(await fetchState());
+  }
+
+  async function handleRobotSaveHome() {
+    await saveRobotHome();
+    setState(await fetchState());
+  }
+
   if (!state) {
     return (
       <div className="app-shell">
@@ -218,10 +241,15 @@ export default function App() {
           />
           <KinematicsTile
             joints={state.joints}
+            robot={state.robot}
             ikTest={state.ik_test}
             onJointChange={handleJointChange}
             onIkSquareTest={handleIkSquareTest}
             onIkSquareStep={handleIkSquareStep}
+            onRobotControlTarget={handleRobotControlTarget}
+            onRobotHome={handleRobotHome}
+            onRobotSaveHome={handleRobotSaveHome}
+            onToggleGripper={handleToggleGripper}
           />
           <TrainingPanel
             training={state.training}

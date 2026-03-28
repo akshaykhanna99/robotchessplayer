@@ -1,0 +1,132 @@
+{
+  "setup_name": "robot_chess_player_v1",
+  "board": {
+    "origin_x_mm": 0.0,
+    "origin_y_mm": 0.0,
+    "board_z_mm": 0.0,
+    "square_size_mm": 20.0,
+    "approach_height_mm": 40.0,
+    "lift_height_mm": 70.0,
+    "capture_bin_x_mm": 460.0,
+    "capture_bin_y_mm": 100.0,
+    "capture_bin_z_mm": 18.0,
+    "file_axis_reversed": false,
+    "rank_axis_reversed": false
+  },
+  "robot": {
+    "name": "pca9686_servo_arm_v1",
+    "transport": {
+      "port": "/dev/tty.usbmodem143201",
+      "baud": 115200,
+      "timeout_sec": 1.0,
+      "protocol": "channel_pulse"
+    },
+    "channels": {
+      "base": 0,
+      "shoulder": 1,
+      "elbow": 2,
+      "wrist": 3,
+      "gripper": 4
+    },
+    "kinematics": {
+      "link_lengths_mm": {
+        "shoulder_mm": 150.0,
+        "elbow_mm": 150.0,
+        "wrist_mm": 21.0
+      },
+      "base_height_mm": 0.0,
+      "tool_offset_mm": {
+        "x_mm": 0.0,
+        "y_mm": 0.0,
+        "z_mm": -20.0
+      }
+    },
+    "joint_limits_deg": {
+      "base": {
+        "min_deg": -180.0,
+        "max_deg": 0.0
+      },
+      "shoulder": {
+        "min_deg": -90.0,
+        "max_deg": 90.0
+      },
+      "elbow": {
+        "min_deg": -10.0,
+        "max_deg": 170.0
+      },
+      "wrist": {
+        "min_deg": -360.0,
+        "max_deg": 180.0
+      }
+    },
+    "calibration": {
+      "zero_offsets_deg": {
+        "base": 180.0,
+        "shoulder": 90.0,
+        "elbow": 90.0,
+        "wrist": 90.0
+      },
+      "direction_signs": {
+        "base": 1.0,
+        "shoulder": -1.0,
+        "elbow": 1.0,
+        "wrist": 1.0
+      },
+      "command_scale": {
+        "base": 1.0,
+        "shoulder": 1.0,
+        "elbow": 1.0,
+        "wrist": 1.0
+      },
+      "pulse_limits": {
+        "base": {
+          "min_pulse": 250.0,
+          "max_pulse": 500.0,
+          "home_pulse": 375.0
+        },
+        "shoulder": {
+          "min_pulse": 250.0,
+          "max_pulse": 500.0,
+          "home_pulse": 375.0
+        },
+        "elbow": {
+          "min_pulse": 250.0,
+          "max_pulse": 500.0,
+          "home_pulse": 385.0
+        },
+        "wrist": {
+          "min_pulse": 250.0,
+          "max_pulse": 500.0,
+          "home_pulse": 375.0
+        },
+        "gripper": {
+          "min_pulse": 180.0,
+          "max_pulse": 340.0,
+          "home_pulse": 340.0
+        }
+      }
+    },
+    "gripper": {
+      "open_deg": 30.0,
+      "close_deg": 80.0
+    },
+    "named_poses": {
+      "home": {
+        "joint_deg": {
+          "base_deg": 90.0,
+          "shoulder_deg": 90.0,
+          "elbow_deg": 90.0,
+          "wrist_deg": 90.0
+        }
+      }
+    },
+    "base_to_board": {
+      "x_mm": 80.0,
+      "y_mm": 263.2,
+      "z_mm": 84.9,
+      "yaw_deg": 0.0
+    },
+    "home_pose_name": "home",
+    "max_linear_speed_mm_s": 100.0
+  }
+}

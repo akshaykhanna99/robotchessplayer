@@ -13,6 +13,7 @@ class SerialTransportConfig:
     port: str
     baud: int = 115200
     timeout_sec: float = 1.0
+    protocol: str = "pca_angle"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,13 @@ class JointLimitDeg:
 
 
 @dataclass(frozen=True)
+class JointPulseRange:
+    min_pulse: float
+    max_pulse: float
+    home_pulse: float
+
+
+@dataclass(frozen=True)
 class JointLimitsDeg:
     base: JointLimitDeg
     shoulder: JointLimitDeg
@@ -64,6 +72,7 @@ class CalibrationConfig:
     zero_offsets_deg: dict[str, float]
     direction_signs: dict[str, float]
     command_scale: dict[str, float]
+    pulse_limits: dict[str, JointPulseRange]
 
 
 @dataclass(frozen=True)
@@ -191,6 +200,10 @@ def _parse_calibration(data: dict | None) -> CalibrationConfig | None:
         zero_offsets_deg=data.get("zero_offsets_deg", {}),
         direction_signs=data.get("direction_signs", {}),
         command_scale=data.get("command_scale", {}),
+        pulse_limits={
+            name: JointPulseRange(**pulse_range)
+            for name, pulse_range in data.get("pulse_limits", {}).items()
+        },
     )
 
 
